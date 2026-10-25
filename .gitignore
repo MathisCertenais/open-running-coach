@@ -1,0 +1,38 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Build outputs (PyInstaller)
+build/
+dist/
+
+# Local database (personal training data)
+coach.db
+coach.db-wal
+coach.db-shm
+
+# Secrets — never commit real keys
+.env
+.env.*
+!.env.example
+
+# Personal activity data: keep the folder structure, not the files
+data/running/*
+data/workout/*
+data/nutrition/*
+!data/running/.gitkeep
+!data/workout/.gitkeep
+!data/nutrition/.gitkeep
+data.zip
+data/data.zip
+
+# Agent skills are installed globally, not in the repo
+.agents/
+skills-lock.json
+
+# Local editor / agent config (not part of the application)
+opencode.jsonc
+
+# OS / editors
+.DS_Store

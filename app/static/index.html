@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coach Running</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%83%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <!-- ================= First-run onboarding ================= -->
+  <div id="onboarding" class="onboarding hidden">
+    <div class="onboarding-card">
+      <div class="onboarding-logo">🏃</div>
+      <h2>Welcome to Coach Running</h2>
+      <p class="muted">Create your athlete profile to get started. It is stored locally in <code>coach.db</code> and you won't be asked again.</p>
+      <form id="onboarding-form" class="goal-form">
+        <label>Name
+          <input type="text" id="onboard-name" required placeholder="Your name" autocomplete="name" />
+        </label>
+        <label>Birth date
+          <input type="date" id="onboard-birth" required />
+        </label>
+        <label>Height (cm)
+          <input type="number" id="onboard-height" min="50" max="250" step="1" required placeholder="e.g. 178" />
+        </label>
+        <button type="submit" class="btn">Create athlete</button>
+        <p class="onboarding-error hidden" id="onboarding-error"></p>
+      </form>
+    </div>
+  </div>
+
+  <header class="topbar" role="banner">
+    <div class="brand">
+      <span class="brand-logo" aria-hidden="true">🏃</span>
+      <span class="brand-name">Coach Running</span>
+    </div>
+    <nav class="nav" aria-label="Main navigation">
+      <button class="nav-btn active" data-view="home" aria-current="page">Home</button>
+      <button class="nav-btn" data-view="coaching">Coaching</button>
+      <button class="nav-btn" data-view="planner">Schedule</button>
+      <button class="nav-btn" data-view="activities">Race history</button>
+      <button class="nav-btn" data-view="fuel">Fuel</button>
+      <details class="nav-more">
+        <summary class="nav-btn">More</summary>
+        <div class="nav-more-menu">
+          <button class="nav-btn" data-view="stats">Stats</button>
+          <button class="nav-btn" data-view="profile">Profile</button>
+          <button class="nav-btn" data-view="records">Records</button>
+          <button class="nav-btn" data-view="heatmap">Heatmap</button>
+          <button class="nav-btn" data-view="goals">Goals</button>
+        </div>
+      </details>
+    </nav>
+    <div class="summary" id="summary">
+      <div class="summary-item"><span class="summary-value" id="sum-activities">–</span><span class="summary-label">runs</span></div>
+      <div class="summary-item"><span class="summary-value" id="sum-distance">–</span><span class="summary-label">distance</span></div>
+      <div class="summary-item"><span class="summary-value" id="sum-time">–</span><span class="summary-label">time</span></div>
+      <div class="summary-item"><span class="summary-value" id="sum-elevation">–</span><span class="summary-label">elevation</span></div>
+    </div>
+    <button class="btn-icon" id="reload-btn" title="Re-read the data/ folder" aria-label="Reload data">↻</button>
+  </header>
+
+  <main id="main">
+  <!-- ================= Home / showcase ================= -->
+  <section id="view-home" class="view" aria-labelledby="home-title">
+    <div class="home">
+      <header class="home-hero">
+        <p class="home-kicker">Coach Running</p>
+        <h1 id="home-title">Your training, explained — and planned.</h1>
+        <p class="home-lead">One place for your runs, strength work, nutrition and recovery. See what matters, ask your coach, and follow a plan to race day.</p>
+        <div class="home-actions">
+          <button class="btn" data-goto="coaching">Open coaching</button>
+          <button class="btn ghost" data-goto="planner">See this week</button>
+        </div>
+      </header>
+
+      <section class="home-section" aria-labelledby="home-coaching-title">
+        <div class="home-section-head">
+          <h2 id="home-coaching-title">Coaching</h2>
+          <button class="link-btn" data-goto="coaching">Open coaching →</button>
+        </div>
+        <div class="home-coaching-grid">
+          <div class="panel">
+            <h3>Your KPIs</h3>
+            <div id="home-kpis" class="home-kpi-grid" aria-live="polite"></div>
+          </div>
+          <div class="panel" id="home-chat-panel">
+            <h3>Ask your coach</h3>
+            <div id="home-chat"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="home-section" aria-labelledby="home-schedule-title">
+        <div class="home-section-head">
+          <h2 id="home-schedule-title">Schedule</h2>
+          <button class="link-btn" data-goto="planner">Open schedule →</button>
+        </div>
+        <div class="panel" id="home-schedule" aria-live="polite"></div>
+      </section>
+
+      <section class="home-section" aria-labelledby="home-races-title">
+        <div class="home-section-head">
+          <h2 id="home-races-title">Race history</h2>
+          <button class="link-btn" data-goto="activities">Open race history →</button>
+        </div>
+        <div class="home-split">
+          <div class="panel" id="home-races" aria-live="polite"></div>
+          <div class="panel" id="home-records" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section class="home-section" aria-labelledby="home-stats-title">
+        <div class="home-section-head">
+          <h2 id="home-stats-title">Stats &amp; profile</h2>
+          <button class="link-btn" data-goto="profile">Open profile →</button>
+        </div>
+        <div class="panel" id="home-stats" aria-live="polite"></div>
+      </section>
+    </div>
+  </section>
+
+  <!-- ================= Activities view ================= -->
+  <section id="view-activities" class="view hidden">
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <h2>My runs</h2>
+          <span class="count" id="count"></span>
+        </div>
+        <ul class="activity-list" id="activity-list" role="list"></ul>
+      </aside>
+
+      <div class="content">
+        <div id="empty-state" class="empty-state">
+          <p>Select a run in the list to display its route and analysis.</p>
+        </div>
+
+        <div id="detail" class="detail hidden">
+          <div class="detail-head">
+            <div class="detail-title">
+              <span class="badge" id="d-type"></span>
+              <h2 id="d-title"></h2>
+              <span class="detail-date" id="d-date"></span>
+              <div class="shoe-select-wrap">
+                <label class="shoe-label">👟
+                  <select id="shoe-select"><option value="">No shoe</option></select>
+                </label>
+              </div>
+            </div>
+            <div class="detail-stats" id="d-stats"></div>
+          </div>
+
+          <div id="map"></div>
+
+          <div class="notes-panel" id="notes-panel">
+            <div class="notes-head">
+              <button class="collapse-btn" id="notes-toggle" type="button" title="Collapse / expand" aria-label="Collapse notes" aria-expanded="true" aria-controls="notes-panel">▾</button>
+              <h3>Notes</h3>
+              <span class="notes-status" id="notes-status"></span>
+            </div>
+            <div class="notes-body">
+              <textarea id="note-input" rows="2" placeholder="Add a note to this run (feeling, conditions, goal…)"></textarea>
+              <div class="notes-actions">
+                <button class="btn" id="save-note-btn">Save note</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="analysis-panel">
+            <div class="tabs" id="analysis-tabs" role="tablist" aria-label="Run analysis">
+              <button class="tab-btn active" data-tab="splits">Splits</button>
+              <button class="tab-btn" data-tab="feedback">Feedback</button>
+              <button class="tab-btn" data-tab="laps">Laps</button>
+              <button class="tab-btn" data-tab="zones">Pace zones</button>
+              <button class="tab-btn" data-tab="gap">GAP</button>
+            </div>
+            <div class="tab-body" id="analysis-tab-body" role="tabpanel" tabindex="0"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Heatmap view ================= -->
+  <section id="view-heatmap" class="view hidden">
+    <div class="view-head">
+      <h2>Personal heatmap</h2>
+      <p class="view-sub">All your routes overlaid. The more a zone is used, the more intense it is.</p>
+    </div>
+    <div id="heatmap-map"></div>
+  </section>
+
+  <!-- ================= Records view ================= -->
+  <section id="view-records" class="view hidden">
+    <div class="view-head"><h2>Records &amp; routes</h2></div>
+    <div class="records-grid">
+      <div class="panel">
+        <h3>Best efforts</h3>
+        <p class="panel-sub">Your best times per reference distance (moving time). Click an effort to open its run.</p>
+        <div id="best-efforts"></div>
+      </div>
+      <div class="panel">
+        <h3>Repeated routes (matched runs)</h3>
+        <p class="panel-sub">Identical routes, to track your progression.</p>
+        <div id="matched-runs"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Statistics view ================= -->
+  <section id="view-stats" class="view hidden">
+    <div class="view-head"><h2>Monthly statistics</h2></div>
+    <div class="panel">
+      <div id="monthly-chart"></div>
+      <div id="monthly-table"></div>
+    </div>
+  </section>
+
+  <!-- ================= Goals view ================= -->
+  <section id="view-goals" class="view hidden">
+    <div class="view-head"><h2>Goals</h2></div>
+    <div class="goals-grid">
+      <div class="panel">
+        <h3>New goal</h3>
+        <form id="goal-form" class="goal-form">
+          <label>Period
+            <select id="goal-period">
+              <option value="weekly">This week</option>
+              <option value="monthly">This month</option>
+              <option value="yearly">This year</option>
+            </select>
+          </label>
+          <label>Metric
+            <select id="goal-metric">
+              <option value="distance">Distance</option>
+              <option value="time">Time</option>
+              <option value="elevation">Elevation</option>
+            </select>
+          </label>
+          <label id="goal-target-label">Target (km)
+            <input type="number" id="goal-target" step="0.1" min="0" placeholder="e.g. 40" />
+          </label>
+          <button type="submit" class="btn">Add</button>
+        </form>
+      </div>
+      <div class="panel">
+        <h3>Progress</h3>
+        <div id="goals-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Planner view ================= -->
+  <section id="view-planner" class="view hidden">
+    <div class="view-head">
+      <h2>Training planner</h2>
+      <p class="view-sub">Your runs from files, plus strength, mobility, cross-training and rest sessions. Support work protects against injury and improves performance.</p>
+      <div class="planner-toolbar">
+        <button class="btn ghost small" id="planner-prev">‹ Prev</button>
+        <button class="btn ghost small" id="planner-today">Today</button>
+        <button class="btn ghost small" id="planner-next">Next ›</button>
+        <span class="planner-week-label" id="planner-week-label"></span>
+        <button class="btn small" id="planner-add">＋ Log session</button>
+      </div>
+    </div>
+    <div id="session-form-wrap" class="panel hidden"></div>
+    <div class="planner-grid" id="planner-grid"></div>
+  </section>
+
+  <!-- ================= Fuel & recovery view ================= -->
+  <section id="view-fuel" class="view hidden">
+    <div class="view-head">
+      <h2>Fuel &amp; recovery</h2>
+      <p class="view-sub">Optional daily check-in: hydration, energy, fueling and supplements. You can also import from OpenNutriTracker (export ZIP in <code>data/nutrition/</code>) or workout exports in <code>data/workout/</code> — then reload. Never medical advice.</p>
+    </div>
+    <div class="fuel-grid">
+      <div class="panel">
+        <h3>Daily check-in</h3>
+        <form id="nutrition-form" class="goal-form">
+          <label>Date
+            <input type="date" id="nut-date" />
+          </label>
+          <div class="fb-grid">
+            <label>Hydration (L)
+              <input type="number" id="nut-hydration" step="0.25" min="0" max="10" placeholder="e.g. 2.5" />
+            </label>
+            <label>Energy (1–5)
+              <input type="number" id="nut-energy" min="1" max="5" placeholder="1–5" />
+            </label>
+            <label>Appetite (1–5)
+              <input type="number" id="nut-appetite" min="1" max="5" placeholder="1–5" />
+            </label>
+            <label>Steps
+              <input type="number" id="nut-steps" min="0" step="100" placeholder="e.g. 8000" />
+            </label>
+          </div>
+          <div class="fb-field">
+            <span class="fb-label">Fueling (long run / hard session)</span>
+            <div class="fb-chips" id="nut-fueling">
+              <button type="button" class="fb-chip" data-value="before">Before</button>
+              <button type="button" class="fb-chip" data-value="during">During</button>
+              <button type="button" class="fb-chip" data-value="after">After</button>
+            </div>
+          </div>
+          <label>Fueling notes
+            <input type="text" id="nut-fueling-notes" placeholder="e.g. gels, water, breakfast" />
+          </label>
+          <div class="fb-field">
+            <span class="fb-label">Supplements taken</span>
+            <div id="nut-supplements"></div>
+          </div>
+          <label>Notes
+            <input type="text" id="nut-notes" placeholder="optional" />
+          </label>
+          <div class="fb-actions">
+            <button type="submit" class="btn">Save check-in</button>
+            <span class="fb-status" id="nut-status"></span>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel">
+        <h3>Recent days</h3>
+        <div id="nutrition-list"></div>
+      </div>
+
+      <div class="panel">
+        <h3>Supplements</h3>
+        <p class="panel-sub">Track adherence only — no efficacy or dosing advice.</p>
+        <form id="supplement-form" class="goal-form inline-form">
+          <label>Name
+            <input type="text" id="supp-name" placeholder="e.g. Vitamin D" />
+          </label>
+          <label>Dose
+            <input type="text" id="supp-dose" placeholder="e.g. 1000 IU" />
+          </label>
+          <label>Frequency
+            <select id="supp-frequency">
+              <option value="daily">Daily</option>
+              <option value="5x_week">5×/week</option>
+              <option value="3x_week">3×/week</option>
+              <option value="2x_week">2×/week</option>
+              <option value="weekly">Weekly</option>
+              <option value="as_needed">As needed</option>
+            </select>
+          </label>
+          <button type="submit" class="btn">Add</button>
+        </form>
+        <div id="supplements-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Coaching view ================= -->
+  <section id="view-coaching" class="view hidden">
+    <div class="view-head">
+      <h2>Coaching</h2>
+      <p class="view-sub">Training load, fitness, injury risk, intensity distribution, VO2max and periodized plans — all from pace &amp; duration.</p>
+      <div class="tabs coaching-tabs" id="coaching-tabs" role="tablist" aria-label="Coaching sections">
+        <button class="tab-btn active" data-ctab="fitness">Load &amp; fitness</button>
+        <button class="tab-btn" data-ctab="acwr">Injury risk</button>
+        <button class="tab-btn" data-ctab="intensity">Intensity (80/20)</button>
+        <button class="tab-btn" data-ctab="vo2max">VO2max &amp; race</button>
+        <button class="tab-btn" data-ctab="plans">Training plans</button>
+        <button class="tab-btn" data-ctab="coach">Coach</button>
+      </div>
+    </div>
+    <div class="coaching-body" id="coaching-body" role="tabpanel" tabindex="0"></div>
+  </section>
+
+  <!-- ================= Profile view ================= -->
+  <section id="view-profile" class="view hidden">
+    <div class="view-head"><h2>Profile</h2></div>
+    <div class="profile-grid">
+      <div class="panel">
+        <h3>Athlete</h3>
+        <form id="profile-form" class="goal-form">
+          <label>Name
+            <input type="text" id="profile-name" placeholder="Your name" />
+          </label>
+          <label>Height (cm)
+            <input type="number" id="profile-height" step="1" min="0" placeholder="e.g. 178" />
+          </label>
+          <label>Birth date
+            <input type="date" id="profile-birth" />
+          </label>
+          <button type="submit" class="btn">Save</button>
+        </form>
+        <div class="profile-derived" id="profile-derived"></div>
+      </div>
+
+      <div class="panel">
+        <h3>Weight tracking</h3>
+        <p class="panel-sub">Log your weight over time to follow its evolution.</p>
+        <div id="weight-chart"></div>
+        <form id="weight-form" class="goal-form inline-form">
+          <label>Date
+            <input type="date" id="weight-date" />
+          </label>
+          <label>Weight (kg)
+            <input type="number" id="weight-kg" step="0.1" min="0" placeholder="e.g. 72.5" />
+          </label>
+          <button type="submit" class="btn">Add</button>
+        </form>
+        <div id="weight-list" class="weight-list"></div>
+      </div>
+
+      <div class="panel shoes-panel">
+        <h3>Shoes</h3>
+        <p class="panel-sub">Track the mileage of each pair. Assign a shoe to each run in the activity view; its mileage adds up automatically.</p>
+        <form id="shoe-form" class="goal-form inline-form">
+          <label>Name
+            <input type="text" id="shoe-name" placeholder="e.g. Asics Gel Nimbus" />
+          </label>
+          <label>Retirement threshold (km)
+            <input type="number" id="shoe-threshold" step="10" min="0" value="600" />
+          </label>
+          <label>Notes
+            <input type="text" id="shoe-notes" placeholder="optional" />
+          </label>
+          <button type="submit" class="btn">Add shoe</button>
+        </form>
+        <div id="shoes-list" class="shoes-list"></div>
+      </div>
+    </div>
+  </section>
+  </main>
+
+  <script src="/static/vendor/leaflet/leaflet.js"></script>
+  <script src="/static/vendor/leaflet-heat/leaflet-heat.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

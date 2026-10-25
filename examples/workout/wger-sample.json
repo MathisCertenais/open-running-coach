@@ -1,0 +1,36 @@
+{
+  "workouts": [
+    {
+      "name": "Upper body",
+      "sessions": [
+        {
+          "date": "2026-10-20",
+          "duration_min": 45,
+          "rpe": 6,
+          "focus": ["shoulders", "triceps", "chest"],
+          "exercises": [
+            { "name": "Bench press", "sets": 3, "reps": 8, "weight_kg": 60 },
+            { "name": "Barbell row", "sets": 3, "reps": 10, "weight_kg": 50 },
+            { "name": "Triceps pushdown", "sets": 3, "reps": 12, "weight_kg": 25 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Lower body",
+      "sessions": [
+        {
+          "date": "2026-10-22",
+          "duration_min": 50,
+          "rpe": 7,
+          "focus": ["glutes", "quads", "calves"],
+          "exercises": [
+            { "name": "Squat", "sets": 4, "reps": 6, "weight_kg": 80 },
+            { "name": "Romanian deadlift", "sets": 3, "reps": 8, "weight_kg": 70 },
+            { "name": "Calf raise", "sets": 3, "reps": 15 }
+          ]
+        }
+      ]
+    }
+  ]
+}

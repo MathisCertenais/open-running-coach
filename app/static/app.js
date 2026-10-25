@@ -1910,9 +1910,12 @@ function renderInjuries(data) {
     byEpisode.get(key).push(link);
   });
 
+  const lowerCount = summary.episodes_lower_limb || 0;
+  const plural = lowerCount === 1 ? "" : "s";
+  const verb = lowerCount === 1 ? "was" : "were";
   const summaryLine =
-    summary.episodes_lower_limb > 0
-      ? `<p class="muted">${summary.episodes_with_hard_session} of ${summary.episodes_lower_limb} lower-limb episode${summary.episodes_lower_limb === 1 ? "" : "s"} were preceded by a hard session (RPE ≥ ${summary.min_rpe}) within ${summary.lookback_hours} h. ${esc(summary.note || "")}</p>`
+    lowerCount > 0
+      ? `<p class="muted">${summary.episodes_with_hard_session} of ${lowerCount} lower-limb episode${plural} ${verb} preceded by a hard session (RPE ≥ ${summary.min_rpe}) within ${summary.lookback_hours} h. ${esc(summary.note || "")}</p>`
       : "";
 
   const cards = episodes

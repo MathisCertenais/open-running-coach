@@ -1253,7 +1253,7 @@ async function loadPlansList() {
 
 const COACH_SUGGESTIONS = [
   "What should I do this week?",
-  "Why is my ACWR where it is?",
+  "Why did my load change?",
   "How is my 80/20 balance?",
   "Am I ready for a 10k?",
   "Review my last 4 weeks.",
@@ -1563,7 +1563,7 @@ async function loadHomeKpis() {
       kpiCard("Chronic load (CTL)", cur.ctl ?? "—", "what other apps call fitness", "coaching", "fitness"),
       kpiCard("Acute load (ATL)", cur.atl ?? "—", "short-term load", "coaching", "fitness"),
       kpiCard("Form (TSB)", cur.tsb != null ? `${cur.tsb >= 0 ? "+" : ""}${cur.tsb}` : "—", cur.calibrating ? "calibrating" : cur.form || "", "coaching", "fitness"),
-      kpiCard("Load change (7d/28d)", a.acwr ?? "—", a.band || "", "coaching", "acwr"),
+      kpiCard("Load change (7d/28d)", a.acwr ?? "—", (ACWR_BAND_META[a.band] || {}).label || a.band || "", "coaching", "acwr"),
       kpiCard("Easy share", g.easy ? `${g.easy.time_pct}%` : "—", "80/10/10 target: 80% easy", "coaching", "intensity"),
       kpiCard("VO2max", vo2.effective_vo2max ?? "—", "ml/kg/min", "coaching", "vo2max"),
       kpiCard("Steps (7d avg)", stepsAvg != null ? stepsAvg.toLocaleString() : "—", "add in Fuel", "fuel"),

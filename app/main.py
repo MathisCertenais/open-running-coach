@@ -634,7 +634,7 @@ def api_set_default_shoe(payload: DefaultShoePayload) -> dict:
 # Endpoints — RPE (session rating of perceived exertion)
 # ---------------------------------------------------------------------------
 class RpePayload(BaseModel):
-    rpe: Optional[int] = None  # 1-10 (Foster scale); None clears the value
+    rpe: Optional[int] = None  # 0-10 (Foster CR-10); None clears the value
 
 
 @app.put("/api/activities/{activity_id}/rpe")
@@ -643,7 +643,7 @@ def api_set_activity_rpe(activity_id: str, payload: RpePayload) -> dict:
     if activity_id not in acts:
         raise HTTPException(status_code=404, detail="Activity not found")
     rpe = payload.rpe
-    if rpe is not None and not (1 <= rpe <= 10):
+    if rpe is not None and not (0 <= rpe <= 10):
         raise HTTPException(status_code=400, detail="RPE must be between 1 and 10")
     store.set_rpe(activity_id, rpe)
     return {"activity_id": activity_id, "rpe": rpe}
@@ -697,8 +697,8 @@ def _validate_feedback(payload: FeedbackPayload) -> None:
         raise HTTPException(
             status_code=400, detail="pain_severity must be between 0 and 10"
         )
-    if payload.rpe is not None and not (1 <= payload.rpe <= 10):
-        raise HTTPException(status_code=400, detail="rpe must be between 1 and 10")
+    if payload.rpe is not None and not (0 <= payload.rpe <= 10):
+        raise HTTPException(status_code=400, detail="rpe must be between 0 and 10")
 
 
 @app.get("/api/activities/{activity_id}/feedback")
@@ -756,8 +756,8 @@ def _validate_session(payload: SessionPayload) -> None:
     _check_enum("status", payload.status, SESSION_STATUS)
     if payload.duration_min is not None and payload.duration_min < 0:
         raise HTTPException(status_code=400, detail="duration_min must be >= 0")
-    if payload.rpe is not None and not (1 <= payload.rpe <= 10):
-        raise HTTPException(status_code=400, detail="rpe must be between 1 and 10")
+    if payload.rpe is not None and not (0 <= payload.rpe <= 10):
+        raise HTTPException(status_code=400, detail="rpe must be between 0 and 10")
     for area in payload.focus or []:
         if area not in SESSION_BODY_AREAS:
             raise HTTPException(status_code=400, detail=f"Invalid focus area: {area}")

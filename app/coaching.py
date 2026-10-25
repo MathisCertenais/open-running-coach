@@ -18,7 +18,9 @@ from .config import (
     ACWR_ACUTE_DAYS,
     ACWR_BANDS,
     ACWR_CHRONIC_DAYS,
+    ACWR_GAP_DAYS,
     ATL_TAU_DAYS,
+    CTL_CALIBRATION_DAYS,
     CTL_TAU_DAYS,
     FORM_NEUTRAL_BAND,
     INTENSITY_GROUPS,
@@ -196,11 +198,14 @@ def fitness_series(
 
     ctl = atl = 0.0
     days: list[dict] = []
-    for item in series:
+    for index, item in enumerate(series):
         tl = item["load"]
         ctl += (tl - ctl) / CTL_TAU_DAYS
         atl += (tl - atl) / ATL_TAU_DAYS
         tsb = ctl - atl
+        # Both averages start at zero, so the first weeks say more about the
+        # cold start than about the athlete. Report that instead of a band.
+        calibrating = index < CTL_CALIBRATION_DAYS
         days.append(
             {
                 "date": item["date"],
@@ -208,7 +213,9 @@ def fitness_series(
                 "ctl": round(ctl, 1),
                 "atl": round(atl, 1),
                 "tsb": round(tsb, 1),
-                "form": _form_band(tsb),
+                "tsb_pct": round(100.0 * tsb / ctl, 1) if ctl > 0 else 0.0,
+                "form": "calibrating" if calibrating else _form_band(tsb),
+                "calibrating": calibrating,
             }
         )
     return {"days": days, "current": days[-1]}
@@ -239,14 +246,34 @@ def _acwr_band(acwr: float) -> str:
     return "unknown"
 
 
+def _chronic_average(loads: list[float], index: int) -> Optional[float]:
+    """Mean load over days -28..-7, excluding the acute week.
+
+    The chronic window deliberately omits the last seven days: including them
+    makes the denominator partly the numerator, which is the mathematical
+    coupling criticised by Lolli et al. (2019) and reproduces spurious
+    correlations on random data.
+    """
+    end = index + 1 - ACWR_ACUTE_DAYS
+    start = end - ACWR_CHRONIC_DAYS
+    if start < 0 or end <= 0:
+        return None
+    window = loads[start:end]
+    if len(window) != ACWR_CHRONIC_DAYS:
+        return None
+    return sum(window) / ACWR_CHRONIC_DAYS
+
+
 def acwr_series(
     activities: list[Activity],
     rpe_map: dict[str, int],
     today: Optional[date] = None,
 ) -> dict:
-    """Acute:Chronic Workload Ratio (Gabbett 2016).
+    """Ratio of recent to longer-term load. Descriptive, not predictive.
 
-    ACWR = (7-day rolling average TL) / (28-day rolling average TL).
+    acute   = mean load over the last 7 days
+    chronic = mean load over days -28..-7 (the acute week is excluded)
+    ratio   = acute / chronic
     """
     series = full_load_series(activities, rpe_map, today=today)
     if not series:
@@ -254,15 +281,26 @@ def acwr_series(
 
     loads = [item["load"] for item in series]
     days: list[dict] = []
-    for i, item in enumerate(series):
-        window = loads[: i + 1]
-        acute = _rolling_avg(window, ACWR_ACUTE_DAYS)
-        chronic = _rolling_avg(window, ACWR_CHRONIC_DAYS)
+    last_active: Optional[int] = None
+    for index, item in enumerate(series):
+        if item["activities"]:
+            last_active = index
+        gap_days = None if last_active is None else index - last_active
+
+        acute = _rolling_avg(loads[: index + 1], ACWR_ACUTE_DAYS)
+        chronic = _chronic_average(loads, index)
+
         acwr = None
         band = "no_data"
         if acute is not None and chronic is not None and chronic > 0:
             acwr = acute / chronic
             band = _acwr_band(acwr)
+        # A layoff is not "ramping down": after ACWR_GAP_DAYS the number stops
+        # being interpretable, so it is withheld rather than shown as low.
+        if gap_days is not None and gap_days > ACWR_GAP_DAYS:
+            acwr = None
+            band = "after_gap"
+
         days.append(
             {
                 "date": item["date"],
@@ -271,6 +309,7 @@ def acwr_series(
                 "chronic": round(chronic, 1) if chronic is not None else None,
                 "acwr": round(acwr, 2) if acwr is not None else None,
                 "band": band,
+                "gap_days": gap_days,
             }
         )
 

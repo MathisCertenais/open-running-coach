@@ -199,6 +199,28 @@ def test_fatigue_drains_faster_than_fitness():
     assert last["ctl"] < peak["ctl"]
 
 
+def test_form_is_calibrating_until_it_has_enough_history():
+    activity = daily_activity(at(TODAY), activity_id="one")
+
+    series = coaching.fitness_series([activity], {"one": 5}, today=TODAY)
+
+    assert series["current"]["calibrating"] is True
+    assert series["current"]["form"] == "calibrating"
+
+
+def test_form_leaves_calibration_after_the_configured_window():
+    activities = [
+        daily_activity(at(TODAY - timedelta(days=50 - n)), activity_id=f"run-{n}")
+        for n in range(51)
+    ]
+
+    series = coaching.fitness_series(activities, {}, today=TODAY)
+    current = series["current"]
+
+    assert current["calibrating"] is False
+    assert current["form"] in {"fresh", "neutral", "fatigued"}
+
+
 def test_form_band_thresholds():
     assert coaching._form_band(FORM_NEUTRAL_BAND + 1) == "fresh"
     assert coaching._form_band(FORM_NEUTRAL_BAND) == "neutral"
@@ -222,15 +244,15 @@ def test_rolling_average_requires_a_full_window():
 @pytest.mark.parametrize(
     "acwr, expected",
     [
-        (0.0, "undertraining"),
-        (0.79, "undertraining"),
-        (0.8, "sweet_spot"),
-        (1.0, "sweet_spot"),
-        (1.29, "sweet_spot"),
-        (1.3, "caution"),
-        (1.49, "caution"),
-        (1.5, "high_risk"),
-        (2.5, "high_risk"),
+        (0.0, "ramping_down"),
+        (0.79, "ramping_down"),
+        (0.8, "steady"),
+        (1.0, "steady"),
+        (1.29, "steady"),
+        (1.3, "ramping_up"),
+        (1.49, "ramping_up"),
+        (1.5, "sharp_increase"),
+        (2.5, "sharp_increase"),
     ],
 )
 def test_acwr_bands_follow_the_configured_thresholds(acwr, expected):
@@ -261,19 +283,20 @@ def test_acwr_is_one_when_the_load_is_constant():
 
     assert current is not None
     assert current["acwr"] == pytest.approx(1.0, abs=0.02)
-    assert current["band"] == "sweet_spot"
+    assert current["band"] == "steady"
 
 
 def test_acwr_flags_a_sudden_load_increase():
-    # Four quiet weeks, then one hard week: acute load doubles the chronic load.
+    # Four quiet weeks, then one hard week. The chronic window is the 28 days
+    # *before* the hard week, so it must be fully covered by the quiet block.
     quiet = [
         daily_activity(
-            at(TODAY - timedelta(days=27 - n)),
+            at(TODAY - timedelta(days=34 - n)),
             rpe=5,
             duration_s=1200,
             activity_id=f"q{n}",
         )
-        for n in range(21)
+        for n in range(28)
     ]
     hard = [
         daily_activity(
@@ -288,8 +311,53 @@ def test_acwr_flags_a_sudden_load_increase():
     current = coaching.acwr_series(quiet + hard, {}, today=TODAY)["current"]
 
     assert current is not None
-    assert current["acwr"] == pytest.approx(2.0, abs=0.1)
-    assert current["band"] == "high_risk"
+    assert current["acwr"] == pytest.approx(3.0, abs=0.1)
+    assert current["band"] == "sharp_increase"
+
+
+def test_acwr_excludes_the_acute_week_from_the_baseline():
+    # 28 quiet days at 100, then a week at 300: a coupled baseline (which
+    # includes the acute week) would read 1.8, the uncoupled one reads 3.0.
+    activities = [
+        daily_activity(
+            at(TODAY - timedelta(days=34 - n)),
+            rpe=5,
+            duration_s=1200,
+            activity_id=f"q{n}",
+        )
+        for n in range(28)
+    ] + [
+        daily_activity(
+            at(TODAY - timedelta(days=6 - n)),
+            rpe=5,
+            duration_s=3600,
+            activity_id=f"h{n}",
+        )
+        for n in range(7)
+    ]
+
+    current = coaching.acwr_series(activities, {}, today=TODAY)["current"]
+
+    coupled = 300 / ((21 * 100 + 7 * 300) / 28)
+    assert current["acwr"] == pytest.approx(3.0, abs=0.1)
+    assert current["acwr"] != pytest.approx(coupled, abs=0.2)
+
+
+def test_acwr_is_suppressed_after_a_training_gap():
+    # Training ends ten days before "today": long enough to stop reading.
+    activities = [
+        daily_activity(at(TODAY - timedelta(days=30 - n)), activity_id=f"run-{n}")
+        for n in range(21)
+    ]
+
+    current = coaching.acwr_series(
+        activities, {a.id: 5 for a in activities}, today=TODAY
+    )
+    last = current["days"][-1]
+
+    assert last["gap_days"] > 7
+    assert last["acwr"] is None
+    assert last["band"] == "after_gap"
 
 
 # ---------------------------------------------------------------------------

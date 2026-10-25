@@ -117,16 +117,24 @@ ATL_TAU_DAYS = 7.0
 # Form (TSB) is "fresh" above this, "fatigued" below -this, neutral in between.
 FORM_NEUTRAL_BAND = 5.0
 
-# Acute:Chronic Workload Ratio (Gabbett 2016).
+# Acute:chronic load ratio. Describes how fast load is changing; it is NOT a
+# risk prediction (see docs/research/04-acwr.md and issue #5).
 ACWR_ACUTE_DAYS = 7
 ACWR_CHRONIC_DAYS = 28
 # Bands: (name, lower_bound_inclusive, upper_bound_exclusive). None = unbounded.
+# The labels describe the change, they do not judge the athlete.
 ACWR_BANDS = [
-    ("undertraining", None, 0.8),
-    ("sweet_spot", 0.8, 1.3),
-    ("caution", 1.3, 1.5),
-    ("high_risk", 1.5, None),
+    ("ramping_down", None, 0.8),
+    ("steady", 0.8, 1.3),
+    ("ramping_up", 1.3, 1.5),
+    ("sharp_increase", 1.5, None),
 ]
+# After this many days without a recorded activity the ratio is meaningless
+# (a layoff would otherwise read as "ramping down").
+ACWR_GAP_DAYS = 7
+# The form band is hidden until the moving averages have enough history to mean
+# anything: starting from zero makes a normal athlete look "fatigued" for months.
+CTL_CALIBRATION_DAYS = 42
 
 # Intensity distribution (Seiler 2010 polarized training). Groups of pace zones
 # (0-based indices): easy = Z1+Z2, moderate = Z3, hard = Z4+Z5+Z6.

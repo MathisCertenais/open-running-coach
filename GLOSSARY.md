@@ -114,19 +114,31 @@ and falls quickly.
 _Avoid_: Fatigue score, load.
 
 **TSB (Training Stress Balance) / Form**:
-The gap between fitness and fatigue. Positive means fresh, negative means
-fatigued. It is a consequence of the training, not a target to train for.
+The gap between chronic and acute load. Positive means fresher than usual,
+negative means more fatigued than usual. It is a consequence of training, not a
+target to train for.
 _Avoid_: Readiness, freshness score.
 
-**ACWR (Acute:Chronic Workload Ratio)**:
-Recent training load divided by longer-term training load. A summary of how
-fast load is changing relative to what the athlete is used to.
-_Avoid_: Injury score, risk index.
+**Calibrating**:
+The state of the chronic/acute averages while they are still dominated by the
+cold start rather than by the athlete's history. No form band is shown until
+calibration is over.
+_Avoid_: Warming up, provisional.
 
-**Undertraining / Sweet Spot / Caution / High Risk**:
-The four ACWR bands. They describe how load is changing, not a medical
-diagnosis.
-_Avoid_: Safe, dangerous, injury.
+**Load Change (acute:chronic ratio)**:
+Recent load (7 days) compared with the 28 days before it. It says how fast
+training is changing. It is not a risk score.
+_Avoid_: Injury risk, ACWR risk, danger score.
+
+**Ramping Down / Steady / Ramping Up / Sharp Increase**:
+The four load-change bands. They describe the direction of the change, not the
+athlete's condition.
+_Avoid_: Undertraining, sweet spot, caution, high risk.
+
+**After a Break**:
+The state of the load-change metric once more than a week has passed without a
+recorded activity. The ratio is withheld rather than shown as a decrease.
+_Avoid_: Detraining, undertraining.
 
 ### Performance
 

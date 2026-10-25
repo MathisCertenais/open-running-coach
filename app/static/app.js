@@ -689,12 +689,14 @@ async function addGoal(e) {
 
 /* --------------------------- Coaching ----------------------------- */
 
+// Load-change bands. They describe the direction of the change, not a risk.
 const ACWR_BAND_META = {
-  undertraining: { label: "Undertraining", color: "#3b82f6", textColor: "#1d4ed8" },
-  sweet_spot: { label: "Sweet spot", color: "#10b981", textColor: "#047857" },
-  caution: { label: "Caution", color: "#f59e0b", textColor: "#b45309" },
-  high_risk: { label: "High risk", color: "#ef4444", textColor: "#b91c1c" },
-  no_data: { label: "No data", color: "#cbd5e1", textColor: "#4b5563" },
+  ramping_down: { label: "Ramping down", color: "#3b82f6", textColor: "var(--accent-blue)" },
+  steady: { label: "Steady", color: "#10b981", textColor: "var(--success)" },
+  ramping_up: { label: "Ramping up", color: "#f59e0b", textColor: "var(--warning)" },
+  sharp_increase: { label: "Sharp increase", color: "#ef4444", textColor: "var(--danger)" },
+  after_gap: { label: "After a break", color: "#cbd5e1", textColor: "var(--text-subtle)" },
+  no_data: { label: "No data", color: "#cbd5e1", textColor: "var(--text-subtle)" },
 };
 
 const WORKOUT_TYPE_META = {
@@ -876,9 +878,9 @@ function renderFitness(load, fitness) {
       <p class="panel-sub">Fitness (CTL), fatigue (ATL) and form (TSB) follow the Coggan Performance Management Chart (Banister impulse-response model). Load comes from pace zones, or from your RPE × duration when you log an effort.</p>
       ${cur ? `
       <div class="metric-cards">
-        <div class="metric-card"><span class="metric-value">${cur.ctl}</span><span class="metric-label">Fitness (CTL)</span></div>
-        <div class="metric-card"><span class="metric-value">${cur.atl}</span><span class="metric-label">Fatigue (ATL)</span></div>
-        <div class="metric-card"><span class="metric-value form-${cur.form}">${cur.tsb >= 0 ? "+" : ""}${cur.tsb}</span><span class="metric-label">Form (TSB)</span></div>
+        <div class="metric-card"><span class="metric-value">${cur.ctl}</span><span class="metric-label">Chronic load (CTL)</span></div>
+        <div class="metric-card"><span class="metric-value">${cur.atl}</span><span class="metric-label">Acute load (ATL)</span></div>
+        <div class="metric-card"><span class="metric-value form-${cur.form}">${cur.tsb >= 0 ? "+" : ""}${cur.tsb}<small>${cur.tsb_pct != null && !cur.calibrating ? ` · ${cur.tsb_pct > 0 ? "+" : ""}${cur.tsb_pct}%` : ""}</small></span><span class="metric-label">Form (TSB)${cur.calibrating ? " — calibrating" : ""}</span></div>
       </div>` : ""}
       <h4 class="chart-title">Daily training load</h4>
       <div class="chart" id="load-bars"></div>
@@ -917,7 +919,7 @@ function renderFitness(load, fitness) {
   }
 }
 
-/* --- Injury risk (ACWR) --- */
+/* --- Load change (acute:chronic ratio) --- */
 
 async function loadAcwr() {
   const res = await fetch("/api/coaching/acwr");
@@ -933,28 +935,31 @@ function renderAcwr(data) {
   const html = [];
   html.push(`
     <div class="panel coaching-panel">
-      <h3>Injury risk (ACWR)</h3>
-      <p class="panel-sub">Acute:Chronic Workload Ratio (Gabbett 2016) — the ratio of your last 7 days of load to your last 28 days. A sharp increase in short-term load is the strongest predictor of injury.</p>
+      <h3>Load change</h3>
+      <p class="panel-sub">Your last 7 days of load compared with the 28 days before them. It describes how fast your training is changing — it is not a risk score and cannot predict an injury.</p>
       ${cur ? `
       <div class="acwr-gauge">
         <div class="acwr-value" style="color:${band.textColor}">${cur.acwr != null ? cur.acwr.toFixed(2) : "—"}</div>
         <div class="acwr-band-label" style="color:${band.textColor}">${band.label}</div>
         <div class="acwr-scale">
-          <div class="acwr-seg" style="flex:0.8;background:#3b82f6" title="< 0.8 Undertraining"></div>
-          <div class="acwr-seg" style="flex:0.5;background:#10b981" title="0.8–1.3 Sweet spot"></div>
-          <div class="acwr-seg" style="flex:0.2;background:#f59e0b" title="1.3–1.5 Caution"></div>
-          <div class="acwr-seg" style="flex:0.7;background:#ef4444" title="> 1.5 High risk"></div>
+          <div class="acwr-seg" style="flex:0.8;background:#3b82f6" title="below 0.8: ramping down"></div>
+          <div class="acwr-seg" style="flex:0.5;background:#10b981" title="0.8–1.3: steady"></div>
+          <div class="acwr-seg" style="flex:0.2;background:#f59e0b" title="1.3–1.5: ramping up"></div>
+          <div class="acwr-seg" style="flex:0.7;background:#ef4444" title="1.5 and above: sharp increase"></div>
           <div class="acwr-marker" style="left:${acwrMarkerLeft(cur.acwr)}%"></div>
         </div>
-        <div class="acwr-scale-labels"><span>&lt; 0.8 undertraining</span><span>0.8–1.3 sweet spot</span><span>1.3–1.5 caution</span><span>≥ 1.5 high risk</span></div>
+        <div class="acwr-scale-labels"><span>&lt; 0.8 ramping down</span><span>0.8–1.3 steady</span><span>1.3–1.5 ramping up</span><span>≥ 1.5 sharp increase</span></div>
       </div>
       <p class="muted" style="margin-top:10px">Acute (7d): <b>${cur.acute}</b> · Chronic (28d): <b>${cur.chronic}</b></p>` : ""}
       <h4 class="chart-title">ACWR over time</h4>
       <div class="chart" id="acwr-chart"></div>
       <details class="explain"><summary>How is this computed?</summary>
-        <p><code>Acute = average load of the last 7 days</code></p>
-        <p><code>Chronic = average load of the last 28 days</code></p>
-        <p><code>ACWR = Acute / Chronic</code>. Keep it in the 0.8–1.3 "sweet spot": raise your training load gradually (≤ ~10% per week) to stay injury-free.</p>
+        <p><code>Recent = average load over the last 7 days</code></p>
+        <p><code>Baseline = average load over the 28 days before that (the last week is excluded)</code></p>
+        <p><code>Ratio = Recent / Baseline</code></p>
+        <p>The week is excluded from the baseline on purpose: including it makes the denominator partly the numerator, which is the coupling criticised by Lolli et al. (2019). The ratio is hidden after more than a week without training, because a break is not a decrease in fitness.</p>
+        <p><b>Not a risk score.</b> The injury-prediction claim attached to this metric does not replicate in running cohorts (Impellizzeri et al. 2020). Read it as "my load went up 40%", then decide.</p>
+        <p>See <code>docs/research/04-acwr.md</code>.</p>
       </details>
     </div>`);
   body.innerHTML = html.join("");
@@ -1537,10 +1542,10 @@ async function loadHomeKpis() {
     const supportCount = (sessions.sessions || [])
       .filter((s) => week.includes(s.date) && s.status !== "skipped").length;
     el.innerHTML = [
-      kpiCard("Fitness (CTL)", cur.ctl ?? "—", "long-term load", "coaching", "fitness"),
-      kpiCard("Fatigue (ATL)", cur.atl ?? "—", "short-term load", "coaching", "fitness"),
-      kpiCard("Form (TSB)", cur.tsb != null ? `${cur.tsb >= 0 ? "+" : ""}${cur.tsb}` : "—", cur.form || "", "coaching", "fitness"),
-      kpiCard("Injury risk (ACWR)", a.acwr ?? "—", a.band || "", "coaching", "acwr"),
+      kpiCard("Chronic load (CTL)", cur.ctl ?? "—", "what other apps call fitness", "coaching", "fitness"),
+      kpiCard("Acute load (ATL)", cur.atl ?? "—", "short-term load", "coaching", "fitness"),
+      kpiCard("Form (TSB)", cur.tsb != null ? `${cur.tsb >= 0 ? "+" : ""}${cur.tsb}` : "—", cur.calibrating ? "calibrating" : cur.form || "", "coaching", "fitness"),
+      kpiCard("Load change (7d/28d)", a.acwr ?? "—", a.band || "", "coaching", "acwr"),
       kpiCard("Easy share", g.easy ? `${g.easy.time_pct}%` : "—", "80/10/10 target: 80% easy", "coaching", "intensity"),
       kpiCard("VO2max", vo2.effective_vo2max ?? "—", "ml/kg/min", "coaching", "vo2max"),
       kpiCard("Steps (7d avg)", stepsAvg != null ? stepsAvg.toLocaleString() : "—", "add in Fuel", "fuel"),
@@ -2097,9 +2102,9 @@ function chipGroupHtml(id, options, selected, multi = false, label = "") {
     + "</div>";
 }
 
-function scaleHtml(id, max, selected, lowLabel, highLabel) {
+function scaleHtml(id, max, selected, lowLabel, highLabel, min = 1) {
   let btns = "";
-  for (let i = 1; i <= max; i++) {
+  for (let i = min; i <= max; i++) {
     const on = selected === i;
     btns += `<button type="button" class="fb-chip${on ? " active" : ""}" data-value="${i}" aria-pressed="${on}">${i}</button>`;
   }
@@ -2166,7 +2171,8 @@ function renderFeedbackTab(detail) {
     <div class="fb-form" id="fb-form">
       <div class="fb-field">
         <span class="fb-label">RPE — session effort (1–10)</span>
-        ${scaleHtml("fb-rpe", 10, detail.rpe, "easy", "maximal")}
+        ${scaleHtml("fb-rpe", 10, detail.rpe, "0 · rest", "10 · maximal", 0)}
+        <p class="fb-help">Anchoring: compare this session with your hardest recent race — not with an easy day. Foster CR-10 scale.</p>
       </div>
       <div class="fb-grid">
         <div class="fb-field"><span class="fb-label">Session intent</span>${chipGroupHtml("fb-session", FB_SESSION_TYPES, fb.session_type, false, "Session intent")}</div>
@@ -2435,7 +2441,7 @@ function renderSessionForm(session) {
       <div class="fb-field"><span class="fb-label">Status</span>${chipGroupHtml("sf-status", SESSION_STATUSES, s.status, false, "Session status")}</div>
       <div class="fb-field"><span class="fb-label">Title</span><input type="text" id="sf-title" value="${esc(s.title || "")}" placeholder="e.g. Lower-body strength"></div>
       <div class="fb-field"><span class="fb-label">Duration (min)</span><input type="number" id="sf-duration" min="0" step="5" value="${s.duration_min ?? ""}"></div>
-      <div class="fb-field"><span class="fb-label">RPE (1–10)</span><input type="number" id="sf-rpe" min="1" max="10" value="${s.rpe ?? ""}"></div>
+      <div class="fb-field"><span class="fb-label">RPE (0–10)</span><input type="number" id="sf-rpe" min="0" max="10" value="${s.rpe ?? ""}"></div>
     </div>
     <div class="fb-field"><span class="fb-label">Focus areas</span>${chipGroupHtml("sf-focus", BODY_AREAS, s.focus || [], true, "Focus areas")}</div>
     <div class="fb-field">

@@ -25,9 +25,10 @@ speed, metabolic rate, or any measured physiological response.
 Two implementation facts matter for everything below.
 
 - The bands are **absolute** (`PACE_ZONES` defaults: 390/330/290/260/230 s/km).
-  They are not anchored to the athlete's threshold pace. A 5:00/km run is Z3 for
-  a 6:30/km runner and Z1 for a 3:30/km runner, and the same run scores the same
-  load after six months of training even though it now costs less.
+  They are not anchored to the athlete's threshold pace. A 5:00/km run is a hard
+  tempo for one runner and an easy run for another, but it scores the same load
+  for both, and it scores the same load for the same runner after six months of
+  training even though it now costs less.
 - The classifier uses **raw pace**, not GAP, even though the app computes GAP
   elsewhere. A hilly easy run is therefore scored as if it were flat.
 
@@ -45,13 +46,14 @@ and the distinction is not cosmetic.
 | Running TSS (rTSS) | Normalised graded pace / threshold pace | `IF² × hours × 100` | Functional threshold pace |
 | **This app** | **Time in six absolute pace bands** | **Linear 1–6 by band index** | **None (fixed s/km)** |
 
-Banister's exponential term exists because blood lactate rises curvilinearly with
-fractional heart-rate reserve; the curve is fitted to that relationship
-(Banister, 1991; Morton et al., 1990). The app's linear, index-based weighting is
-the **Edwards/Lucía summated-zone family**, applied to pace. Foster et al. (2001)
-used exactly that Edwards method as the criterion for their session-RPE work, and
-Haddad et al. (2017) note plainly that the Edwards weighting "was not validated
-with a known physiological response".
+Banister's exponential term was designed to reflect the curvilinear rise in blood
+lactate with fractional heart-rate reserve, rather than a linear one, and the
+curve is fitted to that relationship (Banister, 1991; Morton et al., 1990; Foster
+et al., 2001, describe the same non-linear multiplier). The app's linear,
+index-based weighting is the **Edwards/Lucía summated-zone family**, applied to
+pace. Foster et al. (2001) used exactly that Edwards method as the criterion for
+their session-RPE work, and Haddad et al. (2017) note plainly that the Edwards
+weighting "was not validated with a known physiological response".
 
 So the honest description is: a summated pace-zone index with arbitrary ordinal
 weights. That is a legitimate thing to compute. It is not TRIMP.
@@ -67,10 +69,10 @@ of speeds. If cost per metre is constant, then cost per minute is proportional t
 speed. A load linear in **speed** therefore has a physiological anchor.
 
 The app is not linear in speed. It is linear in **band order**, with bands defined
-on pace (the inverse of speed). Between Z2 and Z6, speed roughly doubles while the
-weight triples. Within a band, pace can change by 60 s/km with no change in load.
-The result is a step function that is monotone in effort but not proportional to
-it, and whose steps are arbitrary.
+on pace (the inverse of speed). Between the middle of Z2 and the middle of Z6,
+speed rises by roughly 60–70 % while the weight triples. Within a band, pace can
+change by 60 s/km with no change in load. The result is a step function that is
+monotone in effort but not proportional to it, and whose steps are arbitrary.
 
 For comparison, Banister's curve over the same range is not wildly different:
 going from 0.60 to 0.80 HRR multiplies the per-minute weight by about 1.96, and
@@ -104,7 +106,7 @@ themselves: coefficient of variation 15.6% for Banister TRIMP, 10.7% for Lucía
 TRIMP, and 28.1% for session-RPE, against 3.9% for heart rate. Any of these
 metrics is noisy at the session level; the pace-zone index is not exempt.
 
-Sanders (2018), in a peer-reviewed letter, makes the specific criticism that
+Sanders (2018), in a published letter, makes the specific criticism that
 applies here: Edwards-style linear weights "increase linearly and are arbitrary",
 the zone widths are arbitrary, and the resulting claim that five minutes in the
 top zone equals five times the stress of five minutes in the bottom zone is
@@ -184,6 +186,9 @@ top zone equals five times the stress of five minutes in the bottom zone is
 - Haddad M, Stylianides G, Djaoui L, Dellal A, Chamari K. Session-RPE method for
   training load monitoring: validity, ecological usefulness, and influencing
   factors. *Front Neurosci.* 2017;11:612. doi:10.3389/fnins.2017.00612
+- Impellizzeri FM, Rampinini E, Coutts AJ, Sassi A, Marcora SM. Use of RPE-based
+  training load in soccer. *Med Sci Sports Exerc.* 2004;36(6):1042–1047.
+  doi:10.1249/01.MSS.0000128199.23901.2F
 - Lucía A, Hoyos J, Santalla A, Earnest C, Chicharro JL. Tour de France versus
   Vuelta a España: which is harder? *Med Sci Sports Exerc.* 2003;35(5):872–878.
   doi:10.1249/01.MSS.0000064999.82036.B4
@@ -198,7 +203,7 @@ top zone equals five times the stress of five minutes in the bottom zone is
 - Wallace LK, Slattery KM, Impellizzeri FM, Coutts AJ. Establishing the criterion
   validity and reliability of common methods for quantifying training load.
   *J Strength Cond Res.* 2014;28(8):2330–2337.
-  doi:10.1519/JSC.0000000000000408
+  doi:10.1519/JSC.0000000000000416
 
 ### Access notes
 
@@ -209,8 +214,14 @@ are taken from the primary journal literature that reports and applies them
 work. The Edwards (1993) book is also unavailable; the method is cited from
 Foster et al. (2001), who reproduce it in full, and from Haddad et al. (2017).
 Wallace et al. (2014, *Eur J Appl Physiol*) was read as an abstract (paywalled
-full text); the correlation coefficients quoted are from that abstract. All other
-sources were read in full or as the publishers' full text.
+full text); the correlation coefficients quoted are from that abstract. di
+Prampero et al. (1986) was read as an abstract plus published summary; the
+0.179 mL O₂·kg⁻¹·m⁻¹ figure is from that abstract. Bourdon et al. (2017) was read
+in the relevant "Defining Training Load" section, not cover to cover. rTSS is
+attributed by TrainingPeaks/WKO documentation to Stephen McGregor (December 2008);
+I did not find a peer-reviewed primary description of rTSS itself, so it is cited
+here as the industry implementation of the TSS formula on pace, not as a
+peer-reviewed method paper.
 
 ## Verdict for this app
 
@@ -237,7 +248,8 @@ Concrete changes, in priority order:
 2. Make `compute_pace_zones` classify on GAP, reusing the existing
    `GAP_UPHILL_FACTOR` / `GAP_DOWNHILL_FACTOR` / `GAP_MAX_DOWN_GRADE` machinery.
 3. Keep `PACE_ZONE_WEIGHTS` but rescale them so that 60 minutes at threshold pace
-   scores 100, and document them in `config.py` as **ordinal** Edwards-type
+   scores 100 (set the threshold band's weight to 100/60 ≈ 1.67 and scale the rest
+   proportionally), and document them in `config.py` as **ordinal** Edwards-type
    weights rather than a TRIMP curve.
 4. Rewrite the `pace_load` docstring to say "summated pace-zone index (Edwards/
    Lucía family), not Banister TRIMP".

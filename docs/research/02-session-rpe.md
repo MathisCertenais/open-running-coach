@@ -66,8 +66,9 @@ to 8.8:1. Short easy sessions are inflated most.
 
 ## 3. The anchoring procedure
 
-Foster's protocol has three parts, and all three are part of the method rather
-than optional polish:
+The protocol, as described by Foster and as implemented in later validation work
+(Wallace et al., 2014), has three parts, and all three are part of the method
+rather than optional polish:
 
 1. **Familiarisation before data collection.** The athlete is shown the scale and
    its verbal anchors in advance.
@@ -89,16 +90,17 @@ you feel now".
 The evidence is convergent rather than criterion-based, and that distinction
 matters.
 
-- Impellizzeri et al. (2004) collected 476 individual soccer sessions and
-  correlated session-RPE with three TRIMP variants: r = 0.54–0.78 against
-  Edwards, 0.50–0.77 against Banister, and 0.61–0.85 against Lucía.
+- Impellizzeri et al. (2004) collected 479 individual soccer sessions and
+  correlated session-RPE with three TRIMP variants; the overall range was
+  r = 0.50–0.85 (p < 0.01). Haddad et al. (2017) tabulate the per-variant ranges
+  as 0.54–0.78 (Edwards), 0.50–0.77 (Banister), and 0.61–0.85 (Lucía).
 - Haddad et al. (2017) reviewed 36 studies using the Foster method across
   individual, team, aquatic, and resistance activities, and concluded that the
   method has good reliability and internal consistency and can be used
   "standing alone".
-- In runners specifically, session-RPE and an individualised TRIMP correlated at
-  r = 0.79 in recreational marathoners (Manzi et al., 2009, as reported in the
-  same literature).
+- In runners specifically, Manzi et al. (2015) followed seven recreational
+  marathoners for five months and found r = 0.79 between session-RPE load and an
+  individualised TRIMP.
 
 The caveat is that the criterion in Foster's own study — Edwards' five-zone
 summated HR — is itself an arbitrary weighting with no known physiological
@@ -122,16 +124,21 @@ coefficient of variation was:
 
 A 28 % coefficient of variation is large for a number that is multiplied by
 duration and then fed into a 42-day moving average. It does not invalidate the
-method — the same study still found session-RPE correlated with oxygen uptake —
-but it means single-session differences of 20–30 % are indistinguishable from
-noise. Session-RPE is a trend instrument, not a measurement.
+method — the same study still found session-RPE correlated with oxygen uptake
+(r = 0.75) — but it means single-session differences of 20–30 % are
+indistinguishable from noise. Haddad's "good reliability" conclusion rests mainly
+on ICC values pooled across studies; Wallace's CV is a stricter day-to-day
+measure. Both can be true: the method ranks sessions well and measures any one
+session imprecisely. Session-RPE is a trend instrument, not a measurement.
 
 ## 6. Known limitations
 
 **The duration confound.** Load = RPE × duration, but RPE itself rises with
 duration even when work rate and physiological responses are held constant.
-Fusco et al. (2020) demonstrated this directly in prolonged exercise. The product
-therefore counts duration twice: once explicitly, once through the rating.
+Fusco et al. (2020) had 11 university swimmers perform 4 × 10 × 100 yd at a
+constant send-off. Lap time, heart rate, and blood lactate did not differ between
+sets, but session-RPE climbed from 4 to 5 to 7 to 8 across the four sets. The
+product therefore counts duration twice: once explicitly, once through the rating.
 Desgorces et al. (2020) compared session-RPE with "RPE alone" in high-intensity
 interval sessions and found that the multiplication inflated the load of long,
 low-density sessions relative to short, dense ones; they argued for RPE alone as
@@ -198,10 +205,15 @@ formula; it is the scale and the calibration.
 - Kraft JA, Green JM, Thompson KR. Session ratings of perceived exertion
   responses during resistance training bouts equated for total work but differing
   in work rate. *J Strength Cond Res.* 2014;28(2):540–545.
-  doi:10.1519/JSC.0b013e31829999e9
+  doi:10.1519/JSC.0b013e31829b569c
+- Manzi V, Bovenzi A, Castagna C, Sinibaldi Salimei P, Volterrani M, Iellamo F.
+  Training-load distribution in endurance runners: objective versus subjective
+  assessment. *Int J Sports Physiol Perform.* 2015;10(8):1023–1028.
+  doi:10.1123/ijspp.2014-0557
 - Wallace LK, Slattery KM, Impellizzeri FM, Coutts AJ. Establishing the criterion
   validity and reliability of common methods for quantifying training load.
   *J Strength Cond Res.* 2014;28(8):2330–2337.
+  doi:10.1519/JSC.0000000000000416
 
 ### Access notes
 
@@ -209,10 +221,11 @@ Foster et al. (2001) was read in full via a publicly posted copy of the publishe
 article; the quotation of the method and the scale are from that text. Foster
 (1998) was not read in full (paywalled); monotony and strain are cited from the
 definition reproduced in Foster et al. (2001) and Haddad et al. (2017). Kraft et
-al. (2014) was read as an abstract. The Manzi et al. (2009) running correlation is
-reported second-hand through the review literature, not from the original paper,
-and is flagged as such above. The Wallace et al. (2014) reliability table is from
-the published abstract; the full text is paywalled.
+al. (2014) was read as an abstract. Manzi et al. (2015) was read as an abstract
+plus a full-text copy; the r = 0.79 correlation is from that paper. The Wallace
+et al. (2014) reliability table is from the published abstract; the full text of
+the *J Strength Cond Res* paper is available via the publisher and was used for
+the anchoring description.
 
 ## Verdict for this app
 

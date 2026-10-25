@@ -40,13 +40,16 @@ TrainingPeaks/WKO documentation (TrainingPeaks, 2016; WKO, 2022). The software
 defaults are 42 days for the chronic term and 7 days for the acute term.
 
 **Where 42 and 7 come from.** I could not find a peer-reviewed derivation or
-validation of this specific pair. They are not Banister model parameters: fitted
-values in the literature range from 4 to 51 days for the fitness constant and 4
-to 74 days for the fatigue constant (Vermeire et al., 2022). The most defensible
-statement is that 42 days is six weeks and 7 days is one week, matching the
-conventional mesocycle and microcycle units of training planning. Hulin et al.
-(2014), writing about the ACWR's 1-week/4-week windows, describe that choice as
-"arbitrary" but convenient for exactly this reason. The same logic applies here.
+validation of this specific pair. They are not the original Banister model
+parameters: Calvert et al. (1976) specified a fitness time constant of 50 days and
+a fatigue time constant of 15 days for their swimmer, and later work fits the
+constants per athlete, with values in the literature ranging from 4 to 51 days for
+the fitness constant and 4 to 74 days for the fatigue constant (Vermeire et al.,
+2022). The most defensible statement is that 42 days is six weeks and 7 days is one
+week, matching the conventional mesocycle and microcycle units of training
+planning. Hulin et al. (2014), writing about the ACWR's 1-week/4-week windows,
+describe that choice as "arbitrary" but convenient for exactly this reason. The
+same logic applies here.
 
 I could not access Allen and Coggan's book (print/paid), so I cannot quote
 Coggan's own rationale. I am reporting the absence of a published derivation, not
@@ -56,10 +59,10 @@ asserting that none exists in the book.
 
 Very little, and what exists is about the model family rather than the pair.
 
-- Morton et al. (1990) fitted the two-component model to performance data and
-  reported significant correlations between predicted and actual performance
-  during training and tapering. The sample was small (the paper models individual
-  athletes), and the constants were fitted, not fixed.
+- Morton et al. (1990) fitted the two-component model to running performance data
+  and reported significant correlations between predicted and actual performance
+  during training and tapering. That is an individual-level model fit, not a
+  population validation, and the constants were fitted rather than fixed.
 - Clarke and Skiba (2013) show that the impulse-response model can fit individual
   data well (R² > 0.90 in some cases) when its parameters are estimated. That is
   evidence for fitting, not for 42/7.
@@ -111,7 +114,7 @@ under a perfectly constant load. With a constant 100 units per day:
 
 | Day | CTL | ATL | TSB | App label |
 | --- | --- | --- | --- | --- |
-| 21 | 39.3 | 96.1 | −56.8 | fatigued |
+| 21 | 39.7 | 96.1 | −56.4 | fatigued |
 | 42 | 63.7 | 99.9 | −36.2 | fatigued |
 | 84 | 86.8 | 100.0 | −13.2 | fatigued |
 | 126 | 95.2 | 100.0 | −4.8 | neutral |
@@ -124,8 +127,8 @@ training block no matter what they do.
 
 ### 5.2 Layoffs read as freshness
 
-After 100 days at 100 units/day (CTL ≈ 90.7, ATL ≈ 100), ten days off gives
-CTL ≈ 71.5 and ATL ≈ 24.0, so TSB ≈ +47.5 and the app says "fresh". The athlete
+After 100 days at 100 units/day (CTL ≈ 90.8, ATL ≈ 100), ten days off gives
+CTL ≈ 71.6 and ATL ≈ 24.0, so TSB ≈ +47.6 and the app says "fresh". The athlete
 is detrained, not fresh. The same happens after illness or injury. A "fresh" label
 should require recent load, not merely the absence of it.
 
@@ -148,9 +151,8 @@ measurement, not training.
 - **Discretisation.** The update `ctl += (tl - ctl) / 42` is the Euler form. It
   converges to the same steady state as the exact exponential
   `ctl·e^(−1/42) + tl·(1 − e^(−1/42))`, but its effective time constant is 41.5
-  days rather than 42. This is negligible in practice; it is mentioned only
-  because the app displays one decimal place and the difference is larger than
-  that at the margins.
+  days rather than 42. This is negligible in practice and is noted only for
+  completeness.
 - **TSB timing.** Coggan's chart conventionally plots TSB from the previous day's
   CTL and ATL, because today's session has not been absorbed when the athlete
   wakes up. The app computes TSB after adding today's load. Neither is wrong;
@@ -162,7 +164,7 @@ measurement, not training.
 The app's CTL is in "zone-minutes per day", not TSS. A recreational runner doing
 five hours per week entirely in Z2 accumulates 600 units per week, or 85.7 per
 day, so their steady-state CTL is about 86. In TSS terms the same training is
-roughly 35 per day. The number 86 looks like a trained cyclist's CTL and is not
+roughly 35–40 per day. The number 86 looks like a trained cyclist's CTL and is not
 one. This matters because published PMC guidance (for example, "CTL 100") is in
 TSS units, and because `FORM_NEUTRAL_BAND = 5.0` is expressed in the app's units,
 where five units is a much smaller fraction of a typical CTL than five TSS points
@@ -204,12 +206,14 @@ is of a typical TSS-based CTL.
 
 Allen and Coggan's book is not open access and I could not read it; the PMC
 defaults are therefore cited from the secondary technical documentation above and
-from the constants as implemented in this app. Morton et al. (1990) was read as
-an abstract (the full text is paywalled); the claim about fitted time constants is
-supported by Clarke and Skiba (2013), which was read in full. Banister et al.
-(1975) and Calvert et al. (1976) were not read directly; they are cited through
-Clarke and Skiba (2013). TrainingPeaks and WKO pages are vendor documentation and
-are cited only as evidence of what the industry does, not as scientific support.
+from the constants as implemented in this app. Calvert et al. (1976) was read as
+an abstract, which states the 50-day and 15-day time constants; the full text is
+paywalled. Morton et al. (1990) was read as an abstract (the full text is
+paywalled); the claim about fitted time constants is supported by Clarke and Skiba
+(2013), which was read in full. Banister et al. (1975) was not read directly; it is
+cited through Clarke and Skiba (2013). TrainingPeaks and WKO pages are vendor
+documentation and are cited only as evidence of what the industry does, not as
+scientific support.
 
 ## Verdict for this app
 

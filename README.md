@@ -20,6 +20,13 @@ computes your statistics, and displays the route on a map. Drop files into
 - ⬆️ **Drag and drop import**: drop KMZ/GPX/TCX activities, nutrition exports or
   workout files into the Import view. Each zone only accepts the formats its
   importer understands, and a file is parsed before it replaces anything.
+- 🧩 **Exercise-level sessions**: record what you actually did (leg press,
+  hip flexor stretch…). Muscle groups are inferred from the name, and a hard
+  session in the 48 h before a pain report is surfaced as a possible link.
+- 👟 **Shoe automation**: pick a default pair and have new runs assigned to it
+  automatically.
+- 🩹 **Injury watch**: episodes derived from the pain already reported in each
+  run's check-in — nothing to record twice.
 - 🌙 **Dark theme**: follows the operating system, one click to override; the
   choice is remembered.
 - 🔄 Automatic re-read of the `data/` folder (↻ button or reload)

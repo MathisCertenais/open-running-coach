@@ -33,6 +33,14 @@ Imports are **idempotent**: an unchanged file is never imported twice.
 - **Notes**: free text, saved per run.
 - **Shoe**: assign a pair from the picker.
 
+### Default shoe
+
+In **Profile → Shoes → New runs** you can choose a default pair and tick
+"Assign it automatically to runs that have no shoe". This is opt-in: the app
+never attributes mileage to a pair you did not choose, and an explicit
+assignment on an activity always wins. Turning it on applies to the runs
+already on disk that have no shoe, so a fresh import is attributed in one go.
+
 ## 4. Planner (strength, mobility, rest)
 
 - Open **Planner** to see the week: runs from your files + support sessions.
@@ -42,6 +50,27 @@ Imports are **idempotent**: an unchanged file is never imported twice.
 - **Done / Skip / Edit / ✕** on each session.
 - Generated training plans automatically add ~2 strength + 2 mobility + 1 rest
   per week (less strength during the taper). They appear here and can be edited.
+
+### Exercises
+
+A session can record what you actually did, one exercise per line:
+
+```
+Leg press | 3x10 @ 80 kg
+Leg extension | 3x12 @ 30 kg
+Hip flexor stretch | 2 min
+Bulgarian split squat
+```
+
+The part before `|` is the exercise name and is the only required bit. The
+detail accepts `sets x reps`, a `kg` weight, or a duration in `min`/`s`.
+Exercises are shown under the session in the Planner, with the muscle groups
+the app inferred from the name.
+
+This is what makes the **Injury watch** panel in Profile work: a hard session
+(RPE ≥ 7) in the 48 hours before a pain report is matched against the muscles
+that pain location involves. The link names the exercises that fired, so you can
+judge whether it is plausible — it is a correlation, not a diagnosis.
 
 ## 5. Fuel (nutrition, steps, supplements)
 

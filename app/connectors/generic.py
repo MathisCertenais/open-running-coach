@@ -204,6 +204,39 @@ def _exercise_summary(exercises) -> str:
     return "; ".join(part for part in parts if part)
 
 
+def _normalise_exercises(raw) -> list[dict]:
+    """Normalise the exercise list of a workout session.
+
+    Accepts strings ("Leg press") as well as objects with sets/reps/weight, so a
+    hand-written export stays importable.
+    """
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for item in raw:
+        if isinstance(item, str):
+            name = item.strip()
+            if name:
+                out.append({"name": name})
+            continue
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or item.get("exercise") or "").strip()
+        if not name:
+            continue
+        out.append(
+            {
+                "name": name,
+                "sets": _int(item.get("sets")),
+                "reps": _int(item.get("reps")),
+                "weight_kg": _num(item.get("weight_kg") or item.get("weight")),
+                "duration_s": _int(item.get("duration_s")),
+                "notes": str(item.get("notes") or "").strip(),
+            }
+        )
+    return out
+
+
 def _session_payload(row: dict) -> Optional[dict]:
     day = _day(_pick(row, WORKOUT_COLUMNS["date"]))
     if not day:
@@ -237,6 +270,7 @@ def _session_payload(row: dict) -> Optional[dict]:
         "focus": focus,
         "notes": notes,
         "status": status,
+        "exercises": _normalise_exercises(row.get("exercises")),
     }
 
 

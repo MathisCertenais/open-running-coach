@@ -142,6 +142,27 @@ class Store:
             )
             self._conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS session_exercises (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id INTEGER NOT NULL,
+                    name       TEXT NOT NULL,
+                    sets       INTEGER,
+                    reps       INTEGER,
+                    weight_kg  REAL,
+                    duration_s INTEGER,
+                    notes      TEXT NOT NULL DEFAULT '',
+                    position   INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_session_exercises_session
+                ON session_exercises (session_id, position)
+                """
+            )
+            self._conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS supplements (
                     id         INTEGER PRIMARY KEY AUTOINCREMENT,
                     name       TEXT NOT NULL,
@@ -258,8 +279,11 @@ class Store:
     # Profile
     # ------------------------------------------------------------------
     def get_profile(self) -> dict[str, str]:
+        # Positional access rather than r["key"]: it works whether the row
+        # factory is Row or a bare tuple, and cannot raise a confusing
+        # "tuple index out of range" under concurrent use.
         rows = self._conn.execute("SELECT key, value FROM profile").fetchall()
-        return {r["key"]: r["value"] for r in rows}
+        return {row[0]: row[1] for row in rows}
 
     def set_profile(self, values: dict[str, str]) -> None:
         with self._conn:
@@ -529,6 +553,8 @@ class Store:
                     created_at,
                 ),
             )
+        if data.get("exercises") is not None:
+            self.set_session_exercises(cur.lastrowid, data["exercises"])
         return cur.lastrowid
 
     def update_session(self, session_id: int, data: dict) -> None:
@@ -553,16 +579,87 @@ class Store:
                     session_id,
                 ),
             )
+        if data.get("exercises") is not None:
+            self.set_session_exercises(session_id, data["exercises"])
+
+    # ------------------------------------------------------------------
+    # Session exercises
+    # ------------------------------------------------------------------
+    def set_session_exercises(self, session_id: int, exercises: list[dict]) -> None:
+        """Replace the exercise list of a session, preserving order."""
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM session_exercises WHERE session_id = ?", (session_id,)
+            )
+            for position, exercise in enumerate(exercises):
+                name = (exercise.get("name") or "").strip()
+                if not name:
+                    continue
+                self._conn.execute(
+                    """
+                    INSERT INTO session_exercises (
+                        session_id, name, sets, reps, weight_kg, duration_s,
+                        notes, position
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        session_id,
+                        name,
+                        exercise.get("sets"),
+                        exercise.get("reps"),
+                        exercise.get("weight_kg"),
+                        exercise.get("duration_s"),
+                        exercise.get("notes", "") or "",
+                        position,
+                    ),
+                )
+
+    def list_session_exercises(self, session_id: int) -> list[dict]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM session_exercises
+            WHERE session_id = ? ORDER BY position, id
+            """,
+            (session_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def exercises_by_session(self) -> dict[int, list[dict]]:
+        """All exercises, grouped by session id (one query)."""
+        rows = self._conn.execute(
+            "SELECT * FROM session_exercises ORDER BY position, id"
+        ).fetchall()
+        grouped: dict[int, list[dict]] = {}
+        for row in rows:
+            grouped.setdefault(row["session_id"], []).append(dict(row))
+        return grouped
+
+    def delete_orphan_exercises(self) -> None:
+        """Drop exercises whose session no longer exists."""
+        with self._conn:
+            self._conn.execute(
+                """
+                DELETE FROM session_exercises
+                WHERE session_id NOT IN (SELECT id FROM sessions)
+                """
+            )
 
     def delete_session(self, session_id: int) -> None:
         with self._conn:
             self._conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+            self._conn.execute(
+                "DELETE FROM session_exercises WHERE session_id = ?", (session_id,)
+            )
 
     def get_session(self, session_id: int) -> Optional[dict]:
         row = self._conn.execute(
             "SELECT * FROM sessions WHERE id = ?", (session_id,)
         ).fetchone()
-        return self._session_row(row) if row else None
+        if not row:
+            return None
+        session = self._session_row(row)
+        session["exercises"] = self.list_session_exercises(session_id)
+        return session
 
     def list_sessions(
         self,
@@ -585,11 +682,18 @@ class Store:
         rows = self._conn.execute(
             f"SELECT * FROM sessions {where} ORDER BY date, time, id", params
         ).fetchall()
-        return [self._session_row(r) for r in rows]
+        exercises = self.exercises_by_session()
+        sessions = []
+        for row in rows:
+            session = self._session_row(row)
+            session["exercises"] = exercises.get(session["id"], [])
+            sessions.append(session)
+        return sessions
 
     def delete_sessions_for_plan(self, plan_id: int) -> None:
         with self._conn:
             self._conn.execute("DELETE FROM sessions WHERE plan_id = ?", (plan_id,))
+        self.delete_orphan_exercises()
 
     @staticmethod
     def _session_row(row) -> dict:
@@ -787,6 +891,7 @@ class Store:
     def delete_sessions_by_source(self, source: str) -> None:
         with self._conn:
             self._conn.execute("DELETE FROM sessions WHERE source = ?", (source,))
+        self.delete_orphan_exercises()
 
     def close(self) -> None:
         self._conn.close()

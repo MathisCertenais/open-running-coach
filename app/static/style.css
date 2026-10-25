@@ -775,3 +775,49 @@ body.onboarding-open { overflow: hidden; }
 .drop-status .ok { color: var(--success); }
 .drop-status .err { color: var(--danger); }
 .drop-status .wait { color: var(--text-muted); }
+
+/* ----- Default shoe ----- */
+.shoe-default {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.shoe-default h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
+.shoe-default label { display: block; font-size: 13px; margin-bottom: 8px; color: var(--text-muted); }
+.shoe-default select { display: block; width: 100%; margin-top: 4px; }
+.checkbox-row { display: flex !important; align-items: center; gap: 8px; }
+.checkbox-row input { width: auto; margin: 0; }
+
+/* ----- Injury watch ----- */
+.injury-card {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--surface-3);
+}
+.injury-card.active { border-left-color: var(--warning); }
+.injury-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.injury-head b { font-size: 14px; text-transform: capitalize; }
+.injury-links { margin: 8px 0 0; padding-left: 18px; font-size: 13px; display: grid; gap: 6px; }
+.badge.caution { background: var(--warning-bg); color: var(--warning); }
+
+/* ----- Session exercises ----- */
+.session-exercises { font-size: 11px; margin-top: 4px; line-height: 1.4; }
+.fb-help { font-size: 11px; color: var(--text-subtle); margin-top: 4px; display: block; line-height: 1.4; }
+.fb-help code { font-size: 11px; }
+#view-planner textarea, .fb-field textarea {
+  width: 100%;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  resize: vertical;
+}
+#view-planner textarea:focus-visible, .fb-field textarea:focus-visible {
+  outline: 3px solid var(--accent-blue);
+  outline-offset: 1px;
+}

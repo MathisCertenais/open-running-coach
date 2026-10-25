@@ -372,3 +372,16 @@ UPLOAD_DIRECTORIES = {
 # Refuse anything larger than this: an activity export is a few MB at most, and
 # reading an unbounded body into memory would be a denial-of-service vector.
 UPLOAD_MAX_BYTES = 50 * 1024 * 1024
+
+# ---------------------------------------------------------------------------
+# Injury episodes and exercise correlation
+# ---------------------------------------------------------------------------
+# Two pain reports in the same place, less than this many days apart, belong to
+# the same episode.
+INJURY_EPISODE_GAP_DAYS = 21
+# An episode with no report for this long is considered settled.
+INJURY_ACTIVE_DAYS = 14
+# How far back to look for a strength session that could explain a pain report.
+INJURY_LOOKBACK_HOURS = 48
+# Only sessions at least this hard are considered (1-10 RPE).
+INJURY_SESSION_MIN_RPE = 7

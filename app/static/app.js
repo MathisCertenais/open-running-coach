@@ -1741,10 +1741,14 @@ function computeAge(iso) {
 }
 
 async function loadProfile() {
-  const [profile, weights, shoes] = await Promise.all([
-    fetch("/api/profile").then((r) => r.json()),
-    fetch("/api/weights").then((r) => r.json()),
-    fetch("/api/shoes").then((r) => r.json()),
+  // Independent requests: one failing endpoint must not blank the whole page.
+  const get = (url) => fetch(url).then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+  const [profile, weights, shoes, defaultShoe, injuriesData] = await Promise.all([
+    get("/api/profile"),
+    get("/api/weights"),
+    get("/api/shoes"),
+    get("/api/shoes/default"),
+    get("/api/injuries"),
   ]);
   state.profile = profile || {};
   $("#profile-name").value = profile.name || "";
@@ -1755,6 +1759,8 @@ async function loadProfile() {
   renderWeights(state.weights, weights.current_weight_kg);
   state.shoes = shoes.shoes || [];
   renderShoes();
+  renderDefaultShoe(defaultShoe);
+  renderInjuries(injuriesData);
   renderProfileDerived();
   populateShoeSelect(state.currentDetail && state.currentDetail.shoe ? state.currentDetail.shoe.id : null);
 }
@@ -1837,6 +1843,112 @@ async function addWeight(e) {
   });
   $("#weight-kg").value = "";
   await loadWeights();
+}
+
+/* ---------------------- Default shoe + injuries ------------------- */
+
+function renderDefaultShoe(data) {
+  const select = $("#shoe-default");
+  const toggle = $("#shoe-auto");
+  if (!select || !toggle) return;
+  const options = state.shoes
+    .filter((s) => !s.retired)
+    .map((s) => `<option value="${s.id}">${esc(s.name)}</option>`)
+    .join("");
+  select.innerHTML = `<option value="">— none —</option>${options}`;
+  select.value = data && data.shoe_id ? String(data.shoe_id) : "";
+  toggle.checked = Boolean(data && data.auto_assign);
+}
+
+async function saveDefaultShoe() {
+  const select = $("#shoe-default");
+  const toggle = $("#shoe-auto");
+  const status = $("#shoe-default-status");
+  if (!select || !toggle) return;
+  const shoeId = select.value ? Number(select.value) : null;
+  const autoAssign = toggle.checked;
+  const res = await fetch("/api/shoes/default", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ shoe_id: shoeId, auto_assign: autoAssign }),
+  });
+  if (!res.ok) {
+    if (status) status.textContent = "Could not save the default shoe.";
+    return;
+  }
+  const data = await res.json();
+  if (status) {
+    status.textContent =
+      data.assigned > 0
+        ? `Assigned to ${data.assigned} run${data.assigned === 1 ? "" : "s"} that had no shoe.`
+        : autoAssign
+          ? "No unassigned run to update."
+          : "Automatic assignment is off.";
+  }
+  if (data.assigned > 0) {
+    await reloadData();
+    await loadShoes();
+  }
+}
+
+function renderInjuries(data) {
+  const el = $("#injury-body");
+  if (!el) return;
+  const episodes = (data && data.episodes) || [];
+  if (!episodes.length) {
+    el.innerHTML =
+      '<p class="empty-note">No pain reported yet. Pain is captured in the post-run check-in of each activity.</p>';
+    return;
+  }
+
+  const links = (data && data.links) || [];
+  const summary = (data && data.summary) || {};
+  const byEpisode = new Map();
+  links.forEach((link) => {
+    const key = `${link.location}|${link.side}|${link.pain_first_date}`;
+    if (!byEpisode.has(key)) byEpisode.set(key, []);
+    byEpisode.get(key).push(link);
+  });
+
+  const summaryLine =
+    summary.episodes_lower_limb > 0
+      ? `<p class="muted">${summary.episodes_with_hard_session} of ${summary.episodes_lower_limb} lower-limb episode${summary.episodes_lower_limb === 1 ? "" : "s"} were preceded by a hard session (RPE ≥ ${summary.min_rpe}) within ${summary.lookback_hours} h. ${esc(summary.note || "")}</p>`
+      : "";
+
+  const cards = episodes
+    .map((ep) => {
+      const key = `${ep.location}|${ep.side}|${ep.first_date}`;
+      const epLinks = byEpisode.get(key) || [];
+      const linkHtml = epLinks
+        .map(
+          (l) => `
+          <li>
+            <b>${esc(l.session_title || "Session")}</b> on ${fmtDate(l.session_date)}
+            (RPE ${l.session_rpe}) — ${esc(l.explanation)}
+            <span class="muted">(${l.hours_before} h before the first report)</span>
+          </li>`,
+        )
+        .join("");
+      const badge = ep.active
+        ? '<span class="badge caution">active</span>'
+        : '<span class="badge unknown">settled</span>';
+      return `
+        <div class="injury-card ${ep.active ? "active" : ""}">
+          <div class="injury-head">
+            <b>${esc(ep.location)}${ep.side ? ` · ${esc(ep.side)}` : ""}</b>
+            ${badge}
+            ${ep.last_severity != null ? `<span class="muted">severity ${ep.last_severity}/10${ep.last_trend ? ` · ${esc(ep.last_trend)}` : ""}</span>` : ""}
+          </div>
+          <div class="muted">
+            ${fmtDate(ep.first_date)} → ${fmtDate(ep.last_date)} ·
+            ${ep.reports} report${ep.reports === 1 ? "" : "s"}${ep.max_severity != null ? ` · max ${ep.max_severity}/10` : ""}
+          </div>
+          ${linkHtml ? `<ul class="injury-links">${linkHtml}</ul>` : ep.explainable ? '<p class="muted">No hard session loading these muscles in the 48 h before.</p>' : ""}
+        </div>`;
+    })
+    .join("");
+
+  el.innerHTML = summaryLine + cards;
 }
 
 /* ----------------------------- Shoes ------------------------------ */
@@ -2196,6 +2308,7 @@ function sessionCardHtml(s) {
   return `<div class="planner-session status-${badge}">
     <div class="planner-session-head"><span>${icon}</span><span class="planner-session-title">${esc(label)}</span></div>
     <div class="planner-session-meta">${esc(meta.join(" · "))} <span class="badge ${badge === "completed" ? "running" : "unknown"}">${badge}</span></div>
+    ${exerciseSummary(s)}
     <div class="planner-session-actions">
       ${s.status !== "completed" ? `<button class="link-btn" data-session-action="complete" data-id="${s.id}">Done</button>` : ""}
       ${s.status !== "skipped" ? `<button class="link-btn" data-session-action="skip" data-id="${s.id}">Skip</button>` : ""}
@@ -2322,6 +2435,11 @@ function renderSessionForm(session) {
       <div class="fb-field"><span class="fb-label">RPE (1–10)</span><input type="number" id="sf-rpe" min="1" max="10" value="${s.rpe ?? ""}"></div>
     </div>
     <div class="fb-field"><span class="fb-label">Focus areas</span>${chipGroupHtml("sf-focus", BODY_AREAS, s.focus || [], true, "Focus areas")}</div>
+    <div class="fb-field">
+      <span class="fb-label">Exercises (one per line)</span>
+      <textarea id="sf-exercises" rows="3" placeholder="Leg press | 3x10 @ 80 kg&#10;Hip flexor stretch | 2 min">${esc(formatExerciseLines(s.exercises || []))}</textarea>
+      <span class="fb-help">Format: <code>Name | sets x reps @ weight</code> or <code>Name | 2 min</code>. Used to link a hard session to a later pain report.</span>
+    </div>
     <div class="fb-field"><span class="fb-label">Notes</span><input type="text" id="sf-notes" value="${esc(s.notes || "")}" placeholder="optional"></div>
     <div class="fb-actions">
       <button class="btn" id="sf-save">${session ? "Save" : "Add session"}</button>
@@ -2347,6 +2465,7 @@ async function saveSession() {
     focus: chipValues("sf-focus"),
     notes: $("#sf-notes").value.trim(),
     status: chipValue("sf-status") || "completed",
+    exercises: parseExerciseLines($("#sf-exercises").value),
   };
   const editing = state.plannerEditing;
   const res = await fetch(editing ? `/api/sessions/${editing}` : "/api/sessions", {
@@ -2360,6 +2479,59 @@ async function saveSession() {
     return;
   }
   await refreshPlanner();
+}
+
+/* --------------------- Exercises (session form) -------------------- */
+
+function parseExerciseLines(text) {
+  return String(text || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [rawName, rawDetail] = line.split("|").map((part) => (part || "").trim());
+      const exercise = { name: rawName };
+      if (!rawDetail) return exercise;
+
+      const setsReps = rawDetail.match(/(\d+)\s*[x×]\s*(\d+)/i);
+      if (setsReps) {
+        exercise.sets = Number(setsReps[1]);
+        exercise.reps = Number(setsReps[2]);
+      }
+      const weight = rawDetail.match(/(\d+(?:[.,]\d+)?)\s*kg/i);
+      if (weight) exercise.weight_kg = Number(weight[1].replace(",", "."));
+      const duration = rawDetail.match(/(\d+)\s*(min|minutes?|s|sec|seconds?)\b/i);
+      if (duration) {
+        const unit = duration[2].toLowerCase();
+        const value = Number(duration[1]);
+        exercise.duration_s = unit.startsWith("m") ? value * 60 : value;
+      }
+      return exercise;
+    })
+    .filter((exercise) => exercise.name);
+}
+
+function formatExerciseLines(exercises) {
+  return (exercises || [])
+    .map((exercise) => {
+      const parts = [];
+      if (exercise.sets && exercise.reps) parts.push(`${exercise.sets}x${exercise.reps}`);
+      if (exercise.weight_kg) parts.push(`${exercise.weight_kg} kg`);
+      if (exercise.duration_s) parts.push(`${Math.round(exercise.duration_s / 60)} min`);
+      return parts.length ? `${exercise.name} | ${parts.join(" ")}` : exercise.name;
+    })
+    .join("\n");
+}
+
+function exerciseSummary(session) {
+  const list = session.exercises || [];
+  if (!list.length) return "";
+  const names = list.slice(0, 3).map((e) => esc(e.name));
+  const more = list.length > 3 ? ` +${list.length - 3}` : "";
+  const muscles = [...new Set(list.flatMap((e) => e.muscles || []))];
+  return `<div class="session-exercises muted">${names.join(", ")}${more}${
+    muscles.length ? ` · ${esc(muscles.join(", "))}` : ""
+  }</div>`;
 }
 
 /* ------------------------- Fuel & recovery ------------------------ */
@@ -2841,6 +3013,8 @@ $("#onboarding-form").addEventListener("submit", submitOnboarding);
 $("#profile-form").addEventListener("submit", submitProfile);
 $("#weight-form").addEventListener("submit", addWeight);
 $("#shoe-form").addEventListener("submit", addShoe);
+$("#shoe-default").addEventListener("change", saveDefaultShoe);
+$("#shoe-auto").addEventListener("change", saveDefaultShoe);
 $("#planner-prev").addEventListener("click", () => shiftPlannerWeek(-7));
 $("#planner-next").addEventListener("click", () => shiftPlannerWeek(7));
 $("#planner-today").addEventListener("click", () => { state.plannerWeek = null; showPlanner(); });

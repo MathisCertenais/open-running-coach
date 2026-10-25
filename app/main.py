@@ -13,8 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import activity as activity_mod
-from . import analysis, coach_llm, coaching
+from . import analysis, coach_llm, coaching, injuries
 from . import connectors as connectors_mod
+from . import exercises as exercises_mod
 from . import uploads as uploads_mod
 from .config import (
     DATA_DIR,
@@ -148,7 +149,35 @@ def _rescan() -> None:
     connectors_mod.import_nutrition_dir(store, DATA_NUTRITION_DIR)
     connectors_mod.import_workout_dir(store, DATA_WORKOUT_DIR)
 
+    _apply_auto_shoe(parsed)
+
     _signature = _data_signature()
+
+
+def _apply_auto_shoe(activities: dict[str, Activity]) -> int:
+    """Assign the default shoe to activities that have none.
+
+    Only runs when the athlete enabled it, so the app never quietly attributes
+    mileage to a pair they did not choose. Returns how many were assigned.
+    """
+    profile = store.get_profile()
+    if profile.get("auto_assign_shoe") != "1":
+        return 0
+    raw = profile.get("default_shoe_id") or ""
+    if not raw.isdigit():
+        return 0
+    shoe_id = int(raw)
+    if not any(shoe["id"] == shoe_id for shoe in store.list_shoes()):
+        return 0
+
+    assigned = store.activity_shoe_map()
+    count = 0
+    for activity in activities.values():
+        if activity.id in assigned:
+            continue
+        store.set_activity_shoe(activity.id, shoe_id)
+        count += 1
+    return count
 
 
 def _ensure_fresh() -> dict[str, Activity]:
@@ -566,6 +595,41 @@ def api_set_activity_shoe(activity_id: str, payload: ActivityShoePayload) -> dic
     return {"activity_id": activity_id, "shoe": _activity_shoe_info(activity_id)}
 
 
+class DefaultShoePayload(BaseModel):
+    shoe_id: Optional[int] = None
+    auto_assign: bool = False
+
+
+@app.get("/api/shoes/default")
+def api_default_shoe() -> dict:
+    profile = store.get_profile()
+    raw = profile.get("default_shoe_id") or ""
+    return {
+        "shoe_id": int(raw) if raw.isdigit() else None,
+        "auto_assign": profile.get("auto_assign_shoe") == "1",
+    }
+
+
+@app.put("/api/shoes/default")
+def api_set_default_shoe(payload: DefaultShoePayload) -> dict:
+    """Choose the shoe assigned to new runs, and whether to assign it at all."""
+    if payload.shoe_id is not None:
+        if not any(s["id"] == payload.shoe_id for s in store.list_shoes()):
+            raise HTTPException(status_code=404, detail="Shoe not found")
+    store.set_profile(
+        {
+            "default_shoe_id": str(payload.shoe_id) if payload.shoe_id else "",
+            "auto_assign_shoe": "1" if payload.auto_assign else "0",
+        }
+    )
+    assigned = _apply_auto_shoe(_ensure_fresh())
+    return {
+        "shoe_id": payload.shoe_id,
+        "auto_assign": payload.auto_assign,
+        "assigned": assigned,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Endpoints — RPE (session rating of perceived exertion)
 # ---------------------------------------------------------------------------
@@ -665,6 +729,15 @@ def api_set_feedback(activity_id: str, payload: FeedbackPayload) -> dict:
 # ---------------------------------------------------------------------------
 # Endpoints — support sessions (strength, mobility, cross-training, rest)
 # ---------------------------------------------------------------------------
+class ExercisePayload(BaseModel):
+    name: str
+    sets: Optional[int] = None
+    reps: Optional[int] = None
+    weight_kg: Optional[float] = None
+    duration_s: Optional[int] = None
+    notes: str = ""
+
+
 class SessionPayload(BaseModel):
     date: str
     time: str = ""
@@ -675,6 +748,7 @@ class SessionPayload(BaseModel):
     focus: list[str] = []
     notes: str = ""
     status: str = "completed"
+    exercises: list[ExercisePayload] = []
 
 
 def _validate_session(payload: SessionPayload) -> None:
@@ -687,10 +761,29 @@ def _validate_session(payload: SessionPayload) -> None:
     for area in payload.focus or []:
         if area not in SESSION_BODY_AREAS:
             raise HTTPException(status_code=400, detail=f"Invalid focus area: {area}")
+    for exercise in payload.exercises or []:
+        if not exercise.name.strip():
+            raise HTTPException(status_code=400, detail="Exercise name is required")
+        for value, label in (
+            (exercise.sets, "sets"),
+            (exercise.reps, "reps"),
+            (exercise.duration_s, "duration_s"),
+        ):
+            if value is not None and value < 0:
+                raise HTTPException(status_code=400, detail=f"{label} must be >= 0")
     try:
         datetime.strptime(payload.date, "%Y-%m-%d")
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date")
+
+
+def _with_muscles(session: dict) -> dict:
+    """Attach the classified muscle groups to a session's exercises."""
+    for exercise in session.get("exercises") or []:
+        exercise["muscles"] = exercises_mod.classify_exercise(exercise["name"])[
+            "muscles"
+        ]
+    return session
 
 
 @app.get("/api/sessions")
@@ -699,14 +792,15 @@ def api_sessions(
     date_to: Optional[str] = None,
     plan_id: Optional[int] = None,
 ) -> dict:
-    return {"sessions": store.list_sessions(date_from, date_to, plan_id)}
+    sessions = store.list_sessions(date_from, date_to, plan_id)
+    return {"sessions": [_with_muscles(session) for session in sessions]}
 
 
 @app.post("/api/sessions")
 def api_add_session(payload: SessionPayload) -> dict:
     _validate_session(payload)
     session_id = store.add_session(payload.model_dump())
-    return store.get_session(session_id)
+    return _with_muscles(store.get_session(session_id))
 
 
 @app.put("/api/sessions/{session_id}")
@@ -715,13 +809,30 @@ def api_update_session(session_id: int, payload: SessionPayload) -> dict:
     if store.get_session(session_id) is None:
         raise HTTPException(status_code=404, detail="Session not found")
     store.update_session(session_id, payload.model_dump())
-    return store.get_session(session_id)
+    return _with_muscles(store.get_session(session_id))
 
 
 @app.delete("/api/sessions/{session_id}")
 def api_delete_session(session_id: int) -> dict:
     store.delete_session(session_id)
     return {"deleted": session_id}
+
+
+# ---------------------------------------------------------------------------
+# Endpoints — injuries
+# ---------------------------------------------------------------------------
+@app.get("/api/injuries")
+def api_injuries() -> dict:
+    """Injury episodes derived from post-run pain reports, plus session links."""
+    activities = _sorted_activities()
+    dates = {
+        activity.id: activity.start_time.astimezone(timezone.utc).date().isoformat()
+        for activity in activities
+        if activity.start_time
+    }
+    episodes = injuries.build_episodes(store.all_feedback(), dates)
+    linked = injuries.link_sessions_to_episodes(episodes, store.list_sessions())
+    return {"episodes": episodes, **linked}
 
 
 # ---------------------------------------------------------------------------

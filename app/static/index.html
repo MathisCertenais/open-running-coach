@@ -450,6 +450,31 @@
           <button type="submit" class="btn">Add shoe</button>
         </form>
         <div id="shoes-list" class="shoes-list"></div>
+
+        <div class="shoe-default">
+          <h4>New runs</h4>
+          <label>Default shoe
+            <select id="shoe-default">
+              <option value="">— none —</option>
+            </select>
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" id="shoe-auto" />
+            Assign it automatically to runs that have no shoe
+          </label>
+          <p class="panel-sub" id="shoe-default-status" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+
+      <div class="panel" id="injury-panel">
+        <h3>Injury watch</h3>
+        <p class="panel-sub">
+          Built from the pain you report in each run's post-run check-in — there
+          is nothing to record twice. A hard strength session in the two days
+          before the pain first appeared is shown as a possible link, with the
+          exercises that load the same muscles.
+        </p>
+        <div id="injury-body"></div>
       </div>
     </div>
   </section>

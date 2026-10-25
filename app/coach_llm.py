@@ -18,6 +18,7 @@ import urllib.request
 from typing import Optional
 from urllib.parse import urlparse
 
+from . import coach_tools
 from .config import (
     ENV_FILE,
     LLM_API_KEY,
@@ -26,6 +27,7 @@ from .config import (
     LLM_ENABLED,
     LLM_HISTORY_TURNS,
     LLM_MAX_TOKENS,
+    LLM_MAX_TOOL_ROUNDS,
     LLM_MODEL,
     LLM_TEMPERATURE,
     LLM_TIMEOUT_S,
@@ -371,20 +373,18 @@ def build_messages(snapshot: dict, history, user_message: str) -> list[dict]:
     return messages
 
 
-def call_llm(
-    messages: list[dict],
-    model: dict,
-    max_tokens: Optional[int] = None,
-    temperature: Optional[float] = None,
-) -> str:
-    """Call the OpenAI-compatible chat completions endpoint for one model."""
+def _request(model: dict, messages: list[dict], tools: Optional[list] = None) -> dict:
+    """POST to the model and return the assistant message (content + tool calls)."""
     url = model["base_url"].rstrip("/") + model["chat_path"]
     payload = {
         "model": model["model"],
         "messages": messages,
-        "temperature": model["temperature"] if temperature is None else temperature,
-        "max_tokens": max_tokens or model["max_tokens"],
+        "temperature": model["temperature"],
+        "max_tokens": model["max_tokens"],
     }
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
     headers = {"Content-Type": "application/json"}
     if model.get("api_key"):
         headers["Authorization"] = f"Bearer {model['api_key']}"
@@ -406,11 +406,16 @@ def call_llm(
     try:
         data = json.loads(raw)
         message = data["choices"][0]["message"]
-        content = message.get("content")
     except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise LLMError(f"Unexpected response from {model['name']}.") from exc
+    if not isinstance(message, dict):
+        raise LLMError(f"Unexpected response from {model['name']}.")
+    return message
 
-    # Some providers return content as a list of parts.
+
+def _content(message: dict, model: dict) -> str:
+    """Extract the visible text from an assistant message."""
+    content = message.get("content")
     if isinstance(content, list):
         content = "".join(
             part.get("text", "") for part in content if isinstance(part, dict)
@@ -426,6 +431,11 @@ def call_llm(
     return content.strip()
 
 
+def call_llm(messages: list[dict], model: dict) -> str:
+    """Single call, no tools (used by the weekly review)."""
+    return _content(_request(model, messages), model)
+
+
 def _model_or_error(model_id: Optional[str]) -> dict:
     model = _resolve_model(model_id)
     if model is None:
@@ -437,10 +447,79 @@ def _model_or_error(model_id: Optional[str]) -> dict:
 
 
 def chat(
-    snapshot: dict, history, user_message: str, model_id: Optional[str] = None
+    snapshot: dict,
+    history,
+    user_message: str,
+    model_id: Optional[str] = None,
+    tool_context: Optional[dict] = None,
 ) -> str:
+    """Answer a question, letting the model call read-only tools when useful.
+
+    The snapshot is always sent: it is the cheap path and covers most questions.
+    Tools exist for the follow-ups a summary cannot answer. A provider that
+    rejects the `tools` field is retried once without them, so a local model
+    that does not support function calling still works.
+    """
     model = _model_or_error(model_id)
-    return call_llm(build_messages(snapshot, history, user_message), model)
+    messages = build_messages(snapshot, history, user_message)
+    use_tools = bool(tool_context) and model.get("tools", True)
+
+    for round_index in range(LLM_MAX_TOOL_ROUNDS + 1):
+        try:
+            message = _request(
+                model, messages, tools=coach_tools.TOOL_SCHEMAS if use_tools else None
+            )
+        except LLMError as exc:
+            # Some OpenAI-compatible servers reject the tools field outright.
+            if use_tools and ("HTTP 400" in str(exc) or "HTTP 422" in str(exc)):
+                use_tools = False
+                continue
+            raise
+
+        tool_calls = message.get("tool_calls") or []
+        if not tool_calls:
+            return _content(message, model)
+        if round_index >= LLM_MAX_TOOL_ROUNDS:
+            break
+
+        messages.append(
+            {
+                "role": "assistant",
+                "content": message.get("content") or "",
+                "tool_calls": tool_calls,
+            }
+        )
+        for call in tool_calls:
+            function = call.get("function") or {}
+            name = function.get("name") or ""
+            raw_arguments = function.get("arguments")
+            try:
+                arguments = (
+                    json.loads(raw_arguments)
+                    if isinstance(raw_arguments, str) and raw_arguments.strip()
+                    else (raw_arguments or {})
+                )
+                if not isinstance(arguments, dict):
+                    raise ValueError
+                result = coach_tools.dispatch(name, arguments, tool_context)
+            except ValueError:
+                result = {"error": "Tool arguments were not valid JSON"}
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call.get("id") or name,
+                    "content": json.dumps(result, ensure_ascii=False),
+                }
+            )
+
+    # Out of tool budget: ask for a final answer with what it already has.
+    messages.append(
+        {
+            "role": "user",
+            "content": "Answer now with the information you already have. Do not call more tools.",
+        }
+    )
+    return _content(_request(model, messages, tools=None), model)
 
 
 def review(snapshot: dict, model_id: Optional[str] = None) -> str:

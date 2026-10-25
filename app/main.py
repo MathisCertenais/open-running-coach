@@ -1130,6 +1130,17 @@ def _coach_snapshot() -> dict:
     )
 
 
+def _coach_tool_context() -> dict:
+    """Data the coach's read-only tools may query, built once per request."""
+    return {
+        "activities": _sorted_activities(),
+        "rpe": _rpe_map(),
+        "feedback": store.all_feedback(),
+        "notes": store.all_notes(),
+        "sessions": store.list_sessions(),
+    }
+
+
 @app.get("/api/coaching/insights")
 def api_coaching_insights() -> dict:
     snapshot = _coach_snapshot()
@@ -1193,7 +1204,13 @@ def api_coaching_chat(payload: CoachChatPayload) -> dict:
         raise HTTPException(status_code=400, detail="Empty message.")
     snapshot = _coach_snapshot()
     try:
-        reply = coach_llm.chat(snapshot, payload.history, message, payload.model)
+        reply = coach_llm.chat(
+            snapshot,
+            payload.history,
+            message,
+            payload.model,
+            tool_context=_coach_tool_context(),
+        )
     except coach_llm.LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     return {"reply": reply}

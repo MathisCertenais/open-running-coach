@@ -227,6 +227,8 @@ LLM_API_KEY = _LLM_API_KEY_ENV or ""
 LLM_MODEL = os.environ.get("COACH_LLM_MODEL", "gpt-4o-mini")
 LLM_ENABLED = bool(_LLM_BASE_URL_ENV or _LLM_API_KEY_ENV)
 LLM_TIMEOUT_S = float(os.environ.get("COACH_LLM_TIMEOUT_S", "60"))
+# How many times the coach may call tools before it must answer.
+LLM_MAX_TOOL_ROUNDS = int(os.environ.get("COACH_LLM_MAX_TOOL_ROUNDS", "4"))
 LLM_MAX_TOKENS = int(os.environ.get("COACH_LLM_MAX_TOKENS", "900"))
 LLM_TEMPERATURE = float(os.environ.get("COACH_LLM_TEMPERATURE", "0.4"))
 LLM_HISTORY_TURNS = int(os.environ.get("COACH_LLM_HISTORY_TURNS", "8"))

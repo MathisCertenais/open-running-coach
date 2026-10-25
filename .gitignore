@@ -39,3 +39,6 @@ opencode.jsonc
 
 # OS / editors
 .DS_Store
+
+# Herdr / agent sandboxes
+.worktrees/

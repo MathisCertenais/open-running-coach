@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from typing import Optional
 from urllib.parse import urlparse
 
 from .config import (
+    ENV_FILE,
     LLM_API_KEY,
     LLM_BASE_URL,
     LLM_CONTEXT_MAX_CHARS,
@@ -27,6 +29,7 @@ from .config import (
     LLM_MODEL,
     LLM_TEMPERATURE,
     LLM_TIMEOUT_S,
+    LOCAL_MODELS_FILE,
     MODELS_FILE,
 )
 
@@ -110,18 +113,38 @@ def _normalize(item: dict) -> dict:
     }
 
 
+def _read_json_file(path) -> dict:
+    """Read a JSON object, or an empty dict when the file is missing/invalid."""
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def _load_models() -> tuple[list[dict], Optional[str]]:
+    """Merge the shipped registry with the models added from the UI.
+
+    ``models.json`` is versioned and shipped; ``models.local.json`` holds what
+    the athlete added and is gitignored. A local entry with the same id wins.
+    """
     models: list[dict] = []
     default_id: Optional[str] = None
-    if MODELS_FILE.exists():
-        try:
-            data = json.loads(MODELS_FILE.read_text(encoding="utf-8"))
-            for item in data.get("models", []):
-                if isinstance(item, dict) and item.get("model"):
-                    models.append(_normalize(item))
-            default_id = data.get("default")
-        except (OSError, ValueError, TypeError):
-            models = []
+
+    shipped = _read_json_file(MODELS_FILE)
+    local = _read_json_file(LOCAL_MODELS_FILE)
+
+    merged: dict[str, dict] = {}
+    for item in shipped.get("models", []) + local.get("models", []):
+        if isinstance(item, dict) and item.get("model"):
+            merged[item.get("id") or item["model"]] = item
+
+    for item in merged.values():
+        models.append(_normalize(item))
+    default_id = local.get("default") or shipped.get("default")
+
     if not models and LLM_ENABLED:
         # Backward compatibility: a single model from the legacy env vars.
         models.append(
@@ -140,6 +163,112 @@ def _load_models() -> tuple[list[dict], Optional[str]]:
 
 
 MODELS, DEFAULT_ID = _load_models()
+
+
+def reload_models() -> None:
+    """Re-read the registry after a model is added or removed."""
+    global MODELS, DEFAULT_ID
+    MODELS, DEFAULT_ID = _load_models()
+
+
+def _slug(text: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
+    return slug or "model"
+
+
+def _write_env_key(var_name: str, value: str) -> None:
+    """Write or replace one KEY=value line in .env, and restrict permissions."""
+    lines: list[str] = []
+    if ENV_FILE.exists():
+        lines = ENV_FILE.read_text(encoding="utf-8").splitlines()
+    prefix = f"{var_name}="
+    for index, line in enumerate(lines):
+        if line.strip().startswith(prefix):
+            lines[index] = f"{prefix}{value}"
+            break
+    else:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append(f"{prefix}{value}")
+    ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    try:
+        ENV_FILE.chmod(0o600)
+    except OSError:
+        pass
+
+
+def add_model(payload: dict) -> dict:
+    """Register a model from the UI, storing its key in .env.
+
+    The key is written server-side and never returned: the browser sends it
+    once over loopback, and ``list_models`` only ever reports whether a key is
+    configured.
+    """
+    name = (payload.get("name") or "").strip()
+    model_name = (payload.get("model") or "").strip()
+    api_base = (payload.get("apiBase") or "").strip().rstrip("/")
+    api_key = (payload.get("apiKey") or "").strip()
+    chat_path = (payload.get("chatPath") or "").strip()
+
+    if not name or not model_name or not api_base:
+        raise ValueError("Name, model and base URL are required")
+    parsed = urlparse(api_base)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError("Base URL must start with http:// or https://")
+
+    local = _read_json_file(LOCAL_MODELS_FILE)
+    entries = [e for e in local.get("models", []) if isinstance(e, dict)]
+
+    existing_ids = {m["id"] for m in MODELS}
+    model_id = _slug(name)
+    suffix = 2
+    while model_id in existing_ids or any(e.get("id") == model_id for e in entries):
+        model_id = f"{_slug(name)}-{suffix}"
+        suffix += 1
+
+    entry = {
+        "id": model_id,
+        "name": name,
+        "provider": "openai",
+        "model": model_name,
+        "apiBase": api_base,
+        "roles": ["chat"],
+        "temperature": float(payload.get("temperature") or 0.4),
+        "maxTokens": int(payload.get("maxTokens") or LLM_MAX_TOKENS),
+    }
+    if chat_path:
+        entry["chatPath"] = chat_path
+
+    if api_key:
+        env_name = "COACH_MODEL_" + model_id.upper().replace("-", "_") + "_KEY"
+        _write_env_key(env_name, api_key)
+        os.environ[env_name] = api_key
+        entry["apiKeyEnv"] = env_name
+
+    entries.append(entry)
+    LOCAL_MODELS_FILE.write_text(
+        json.dumps({"models": entries}, indent=2) + "\n", encoding="utf-8"
+    )
+    reload_models()
+
+    added = next((m for m in list_models() if m["id"] == model_id), None)
+    if added is None:  # pragma: no cover - defensive
+        raise ValueError("Model could not be registered")
+    return added
+
+
+def remove_model(model_id: str) -> bool:
+    """Remove a model added from the UI. Shipped models cannot be removed."""
+    local = _read_json_file(LOCAL_MODELS_FILE)
+    entries = [e for e in local.get("models", []) if isinstance(e, dict)]
+    remaining = [e for e in entries if e.get("id") != model_id]
+    if len(remaining) == len(entries):
+        return False
+    LOCAL_MODELS_FILE.write_text(
+        json.dumps({"models": remaining}, indent=2) + "\n", encoding="utf-8"
+    )
+    reload_models()
+    return True
 
 
 def _is_configured(model: dict) -> bool:
@@ -161,9 +290,19 @@ def list_models() -> list[dict]:
             "provider": m["provider"],
             "roles": m["roles"],
             "configured": _is_configured(m),
+            "editable": m["id"] in _local_ids(),
         }
         for m in MODELS
     ]
+
+
+def _local_ids() -> set[str]:
+    local = _read_json_file(LOCAL_MODELS_FILE)
+    return {
+        e.get("id")
+        for e in local.get("models", [])
+        if isinstance(e, dict) and e.get("id")
+    }
 
 
 def default_model_id() -> Optional[str]:

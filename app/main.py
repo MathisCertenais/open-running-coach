@@ -1143,6 +1143,36 @@ def api_coaching_chat_status() -> dict:
     }
 
 
+class ModelPayload(BaseModel):
+    name: str
+    model: str
+    apiBase: str
+    apiKey: str = ""
+    chatPath: str = ""
+
+
+@app.post("/api/coaching/models")
+def api_add_model(payload: ModelPayload) -> dict:
+    """Register a model from the UI.
+
+    The key is written to the local .env and never returned: the response only
+    says whether the model is configured.
+    """
+    try:
+        return coach_llm.add_model(payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.delete("/api/coaching/models/{model_id}")
+def api_remove_model(model_id: str) -> dict:
+    if not coach_llm.remove_model(model_id):
+        raise HTTPException(
+            status_code=404, detail="Model not found, or it is a shipped model"
+        )
+    return {"removed": model_id}
+
+
 class CoachChatPayload(BaseModel):
     message: str
     history: list[dict] = []

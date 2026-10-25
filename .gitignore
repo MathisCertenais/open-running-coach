@@ -17,6 +17,9 @@ coach.db-shm
 .env.*
 !.env.example
 
+# Models added from the UI (metadata only, but user data)
+models.local.json
+
 # Personal activity data: keep the folder structure, not the files
 data/running/*
 data/workout/*

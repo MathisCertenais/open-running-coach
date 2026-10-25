@@ -1270,6 +1270,7 @@ function renderChatPanel(hostId, prefix) {
       <label class="coach-model-label" for="${prefix}-model">Model</label>
       <select id="${prefix}-model" class="coach-model"></select>
     </div>
+    <div id="${prefix}-model-form" class="model-form-host hidden"></div>
     <div class="coach-messages" id="${prefix}-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
     <div class="coach-suggestions" id="${prefix}-suggestions"></div>
     <form id="${prefix}-form" class="coach-input-row">
@@ -1352,7 +1353,9 @@ function renderCoachText(text) {
   return html || "<p></p>";
 }
 
-async function loadChatStatus(prefix) {
+const NEW_MODEL_VALUE = "__new__";
+
+async function loadChatStatus(prefix, preferredId = null) {
   const el = document.getElementById(prefix + "-status");
   if (!el) return;
   try {
@@ -1361,18 +1364,28 @@ async function loadChatStatus(prefix) {
     const select = document.getElementById(prefix + "-model");
     const chatModels = (status.models || []).filter((m) => (m.roles || []).includes("chat"));
     if (select) {
-      select.innerHTML = chatModels.map((m) =>
-        `<option value="${esc(m.id)}"${m.configured ? "" : " disabled"}>${esc(m.name)}${m.configured ? "" : " (missing key)"}</option>`
-      ).join("");
-      const stored = localStorage.getItem("coachModel");
-      const preferred = chatModels.find((m) => m.id === stored && m.configured)
-        || chatModels.find((m) => m.id === status.default && m.configured)
-        || chatModels.find((m) => m.configured);
+      select.innerHTML =
+        chatModels
+          .map((m) => {
+            const missing = m.configured ? "" : " (missing key)";
+            return `<option value="${esc(m.id)}"${m.configured ? "" : " disabled"}>${esc(m.name)}${missing}</option>`;
+          })
+          .join("") + `<option value="${NEW_MODEL_VALUE}">＋ New model…</option>`;
+      const stored = preferredId || localStorage.getItem("coachModel");
+      const preferred =
+        chatModels.find((m) => m.id === stored && m.configured) ||
+        chatModels.find((m) => m.id === status.default && m.configured) ||
+        chatModels.find((m) => m.configured);
       if (preferred) select.value = preferred.id;
-      select.addEventListener("change", () => {
+      select.onchange = () => {
+        if (select.value === NEW_MODEL_VALUE) {
+          renderNewModelForm(prefix);
+          return;
+        }
+        hideNewModelForm(prefix);
         localStorage.setItem("coachModel", select.value);
         updateChatStatusLine(prefix, status);
-      });
+      };
     }
     updateChatStatusLine(prefix, status);
     const disabled = !status.configured;
@@ -1384,6 +1397,83 @@ async function loadChatStatus(prefix) {
     console.error(err);
     el.textContent = "Could not check coach status.";
   }
+}
+
+function hideNewModelForm(prefix) {
+  const host = document.getElementById(prefix + "-model-form");
+  if (!host) return;
+  host.classList.add("hidden");
+  host.innerHTML = "";
+}
+
+function renderNewModelForm(prefix) {
+  const host = document.getElementById(prefix + "-model-form");
+  if (!host) return;
+  host.classList.remove("hidden");
+  host.innerHTML = `
+    <form class="model-form" id="${prefix}-mf">
+      <h4>Add a model</h4>
+      <p class="panel-sub">Any OpenAI-compatible endpoint. The key is written to
+      <code>.env</code> on this machine — never to the database, never back to
+      the browser.</p>
+      <label for="${prefix}-m-name">Display name
+        <input type="text" id="${prefix}-m-name" required placeholder="e.g. My gateway" />
+      </label>
+      <label for="${prefix}-m-model">Model id
+        <input type="text" id="${prefix}-m-model" required placeholder="e.g. gpt-4o-mini" />
+      </label>
+      <label for="${prefix}-m-base">Base URL
+        <input type="url" id="${prefix}-m-base" required placeholder="https://api.example.com/v1" />
+      </label>
+      <label for="${prefix}-m-key">API key <span class="muted">(leave empty for a local server)</span>
+        <input type="password" id="${prefix}-m-key" autocomplete="off" placeholder="sk-…" />
+      </label>
+      <details class="model-advanced">
+        <summary>Advanced</summary>
+        <label for="${prefix}-m-path">Chat path
+          <input type="text" id="${prefix}-m-path" placeholder="/chat/completions" />
+        </label>
+      </details>
+      <div class="model-form-actions">
+        <button class="btn" type="submit">Add model</button>
+        <button class="btn ghost" type="button" id="${prefix}-m-cancel">Cancel</button>
+        <span class="fb-status" id="${prefix}-m-status" role="status" aria-live="polite"></span>
+      </div>
+    </form>`;
+
+  const form = document.getElementById(`${prefix}-mf`);
+  const statusEl = document.getElementById(`${prefix}-m-status`);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    statusEl.textContent = "Adding…";
+    const payload = {
+      name: document.getElementById(`${prefix}-m-name`).value.trim(),
+      model: document.getElementById(`${prefix}-m-model`).value.trim(),
+      apiBase: document.getElementById(`${prefix}-m-base`).value.trim(),
+      apiKey: document.getElementById(`${prefix}-m-key`).value,
+      chatPath: document.getElementById(`${prefix}-m-path`).value.trim(),
+    };
+    const res = await fetch("/api/coaching/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      statusEl.textContent = data.detail || "Could not add the model.";
+      return;
+    }
+    document.getElementById(`${prefix}-m-key`).value = "";
+    hideNewModelForm(prefix);
+    await loadChatStatus(prefix, data.id);
+  });
+
+  document.getElementById(`${prefix}-m-cancel`).addEventListener("click", () => {
+    hideNewModelForm(prefix);
+    const select = document.getElementById(prefix + "-model");
+    if (select && select.value === NEW_MODEL_VALUE) select.selectedIndex = 0;
+  });
 }
 
 function updateChatStatusLine(prefix, status) {
@@ -3054,8 +3144,9 @@ document.querySelectorAll(".nav-btn").forEach((b) => {
     if (details) details.open = false;
   });
 });
-// The "More" menu closes when a click moves outside it, so it never stays
-// over the page after the athlete starts looking at something else.
+
+// The "More" menu closes when focus or a click moves outside it, so it never
+// stays over the page after the athlete starts looking at something else.
 document.addEventListener("click", (event) => {
   document.querySelectorAll("details.nav-more[open]").forEach((details) => {
     if (!details.contains(event.target)) details.open = false;

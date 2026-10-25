@@ -851,3 +851,20 @@ body.onboarding-open { overflow: hidden; }
 /* ----- Export ----- */
 .export-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
 .export-actions .btn { text-decoration: none; display: inline-block; }
+
+/* ----- Add a model form ----- */
+.model-form-host { margin: 10px 0 4px; }
+.model-form {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--surface-3);
+  display: grid;
+  gap: 8px;
+}
+.model-form h4 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
+.model-form label { display: block; font-size: 12px; color: var(--text-muted); }
+.model-form input { display: block; width: 100%; margin-top: 4px; }
+.model-form .panel-sub { margin: 0; font-size: 12px; }
+.model-advanced summary { cursor: pointer; font-size: 12px; color: var(--text-muted); }
+.model-form-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

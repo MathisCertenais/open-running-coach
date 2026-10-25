@@ -27,6 +27,10 @@ DB_PATH = APP_HOME / "coach.db"
 # Non-secret model registry: base URLs, model names, and the *name* of the env
 # var holding each key (never the key itself).
 MODELS_FILE = APP_HOME / "models.json"
+# Models added from the UI. Kept out of version control: it is user data.
+LOCAL_MODELS_FILE = APP_HOME / "models.local.json"
+# Where a key entered in the UI is written. Also gitignored, chmod 600.
+ENV_FILE = APP_HOME / ".env"
 
 # Folder of static assets served by the web server
 STATIC_DIR = RESOURCE_DIR / "static"

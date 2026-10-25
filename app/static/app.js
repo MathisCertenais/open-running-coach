@@ -1701,7 +1701,7 @@ async function boot() {
 
 function applyDeepLink() {
   const urlView = new URLSearchParams(window.location.search).get("view");
-  if (urlView && ["home", "activities", "heatmap", "records", "stats", "goals", "coaching", "profile", "planner", "fuel"].includes(urlView)) {
+  if (urlView && ["home", "activities", "heatmap", "records", "stats", "goals", "coaching", "profile", "planner", "fuel", "import"].includes(urlView)) {
     switchView(urlView);
     return true;
   }
@@ -2585,6 +2585,132 @@ async function reloadData() {
   }
 }
 
+/* --------------------------- Import (drop) ------------------------ */
+
+const UPLOAD = {
+  running: { exts: [".kmz", ".gpx", ".tcx"] },
+  nutrition: { exts: [".csv", ".json", ".zip"] },
+  workout: { exts: [".csv", ".json"] },
+};
+
+function addDropStatus(status, kind, text) {
+  const line = document.createElement("div");
+  line.className = kind;
+  line.textContent = text;
+  status.appendChild(line);
+  return line;
+}
+
+async function uploadOne(category, file) {
+  const res = await fetch(
+    `/api/upload/${category}?filename=${encodeURIComponent(file.name)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file,
+    },
+  );
+  let data = {};
+  try {
+    data = await res.json();
+  } catch (err) {
+    data = {};
+  }
+  if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+  return data;
+}
+
+async function handleDroppedFiles(category, files) {
+  const status = document.querySelector(`#status-${category}`);
+  if (!status) return;
+  status.textContent = "";
+  const list = Array.from(files);
+  if (!list.length) return;
+
+  const allowed = UPLOAD[category].exts;
+  let imported = 0;
+
+  for (const file of list) {
+    const ext = "." + (file.name.split(".").pop() || "").toLowerCase();
+    if (!allowed.includes(ext)) {
+      addDropStatus(
+        status,
+        "err",
+        `✕ ${file.name}: ${ext === "." ? "no extension" : ext} is not accepted here (${allowed.join(", ")})`,
+      );
+      continue;
+    }
+    const pending = addDropStatus(status, "wait", `… ${file.name}`);
+    try {
+      const data = await uploadOne(category, file);
+      pending.remove();
+      addDropStatus(status, "ok", `✓ ${file.name} — ${data.summary}`);
+      imported += 1;
+    } catch (err) {
+      pending.remove();
+      addDropStatus(status, "err", `✕ ${file.name}: ${err.message}`);
+    }
+  }
+
+  if (imported) await reloadData();
+}
+
+function initImport() {
+  document.querySelectorAll(".drop-zone").forEach((zone) => {
+    const category = zone.dataset.category;
+    const target = zone.querySelector(".drop-target");
+    const input = zone.querySelector("input[type=file]");
+    if (!category || !target || !input) return;
+
+    const openPicker = () => input.click();
+
+    target.addEventListener("click", (event) => {
+      // Clicking the hidden input bubbles back to this handler: ignoring it
+      // prevents an infinite click loop.
+      if (event.target === input) return;
+      openPicker();
+    });
+    target.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openPicker();
+      }
+    });
+
+    ["dragenter", "dragover"].forEach((type) => {
+      zone.addEventListener(type, (event) => {
+        event.preventDefault();
+        zone.classList.add("is-dragover");
+      });
+    });
+    zone.addEventListener("dragleave", (event) => {
+      // Ignore the leave events fired when crossing child elements.
+      if (event.relatedTarget && zone.contains(event.relatedTarget)) return;
+      zone.classList.remove("is-dragover");
+    });
+    zone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      zone.classList.remove("is-dragover");
+      const files = event.dataTransfer ? event.dataTransfer.files : [];
+      handleDroppedFiles(category, files);
+    });
+
+    input.addEventListener("change", () => {
+      handleDroppedFiles(category, input.files || []);
+      input.value = "";
+    });
+  });
+
+  // Dropping outside a zone must not make the browser navigate to the file.
+  ["dragover", "drop"].forEach((type) => {
+    document.addEventListener(type, (event) => {
+      if (!event.target.closest || !event.target.closest(".drop-zone")) {
+        event.preventDefault();
+      }
+    });
+  });
+}
+
 /* --------------------------- Accessibility ------------------------ */
 
 function initTabs(tablistId, panelId) {
@@ -2702,6 +2828,7 @@ function initTheme() {
 }
 
 initTheme();
+initImport();
 initTabs("analysis-tabs", "analysis-tab-body");
 initTabs("coaching-tabs", "coaching-body");
 $("#save-note-btn").addEventListener("click", saveNote);

@@ -59,10 +59,29 @@ Open **Fuel**:
 
 ## 6. Importing from other apps
 
+### Drag and drop (easiest)
+
+Open **Import** in the navigation and drop your files into the matching zone:
+
+| Zone | Accepts | Written to |
+| --- | --- | --- |
+| Running activities | `.kmz`, `.gpx`, `.tcx` | `data/running/` |
+| Nutrition, weight & steps | `.csv`, `.json`, `.zip` | `data/nutrition/` |
+| Strength & mobility | `.csv`, `.json` | `data/workout/` |
+
+A zone refuses anything its importer cannot read, and each file is parsed
+before it is stored, so a broken export is reported instead of sitting in
+`data/` doing nothing. Dropping a file with the same name as an existing one
+replaces it. Every zone is keyboard operable: focus it and press
+<kbd>Enter</kbd> to choose files instead of dragging.
+
+Moving files into `data/` by hand still works exactly as before; the Import
+view is only a shortcut.
+
 ### Nutrition — Waistline (F-Droid) or a generic CSV
 
 - **Waistline** → *Settings → Import/Export → Export Diary to CSV*.
-- Put the CSV in `data/nutrition/` and press **↻**.
+- Drop the CSV in the Import view, or put it in `data/nutrition/` and press **↻**.
 - The importer accepts `,` or `;`, English or French headers, ISO or
   `DD/MM/YYYY` dates, decimal comma, and optional units
   (`Calories (kcal)`, `Protéines (g)`, `Pas`).
@@ -70,21 +89,23 @@ Open **Fuel**:
 ### Nutrition — OpenNutriTracker
 
 - *Settings → Export / Import App Data → Export* (JSON or CSV bundle).
-- Put the `.zip` in `data/nutrition/` and press **↻**.
+- Drop the `.zip` in the Import view, or put it in `data/nutrition/` and press **↻**.
 - Reads daily kcal/protein/carbs/fat and weight history.
 
 ### Workout — wger or a generic JSON/CSV
 
-- Put a JSON like `{"workouts": [{"name": "...", "sessions": [...]}]}` or a CSV
-  in `data/workout/` and press **↻**. `exercises` are summarized into the notes.
+- Drop a JSON like `{"workouts": [{"name": "...", "sessions": [...]}]}` or a CSV
+  in the Import view, or put it in `data/workout/` and press **↻**.
+  `exercises` are summarized into the notes.
 
 ### Samples
 
 Two sample files are included so you can see the result immediately:
 `examples/nutrition/waistline-sample.csv` and
-`examples/workout/wger-sample.json` — copy them into the matching `data/`
-folder to try them. Delete them when you switch to real data; remove the
-imported rows with the **✕** buttons in Fuel / Planner / Profile.
+`examples/workout/wger-sample.json` — drag them into the Import view, or copy
+them into the matching `data/` folder. Delete them when you switch to real
+data; remove the imported rows with the **✕** buttons in Fuel / Planner /
+Profile.
 
 ## 7. Coaching
 

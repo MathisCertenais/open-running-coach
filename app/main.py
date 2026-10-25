@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from . import activity as activity_mod
 from . import analysis, coach_llm, coaching
 from . import connectors as connectors_mod
+from . import uploads as uploads_mod
 from .config import (
     DATA_DIR,
     DATA_NUTRITION_DIR,
@@ -37,6 +38,7 @@ from .config import (
     SESSION_STATUS,
     STATIC_DIR,
     SUPPLEMENT_FREQUENCIES,
+    UPLOAD_MAX_BYTES,
 )
 from .parsers import SUPPORTED_EXTENSIONS, Activity, parse_file
 from .store import Store
@@ -991,6 +993,48 @@ def api_coaching_review(payload: Optional[CoachReviewPayload] = None) -> dict:
     except coach_llm.LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     return {"review": review}
+
+
+# ---------------------------------------------------------------------------
+# Uploads (drag and drop)
+# ---------------------------------------------------------------------------
+@app.post("/api/upload/{category}")
+async def api_upload(category: str, filename: str, request: Request) -> dict:
+    """Store an uploaded file in the matching data/ folder and import it.
+
+    The file is sent as a raw request body rather than multipart/form-data, so
+    the runtime keeps its two dependencies (python-multipart is not needed).
+    All validation lives in app/uploads.py.
+    """
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="File is too large")
+
+    body = await request.body()
+    try:
+        stored = uploads_mod.store_upload(category, filename, body)
+    except uploads_mod.UploadError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message)
+
+    name = stored["filename"]
+    if category == "running":
+        acts = _ensure_fresh()
+        activity = next((a for a in acts.values() if a.filename == name), None)
+        summary = activity.name if activity else "file stored, no activity parsed"
+    elif category == "nutrition":
+        stats = connectors_mod.import_nutrition_dir(store, DATA_NUTRITION_DIR)
+        summary = f"{stats['logs']} day(s) of nutrition, {stats['weights']} weight(s)"
+    else:
+        stats = connectors_mod.import_workout_dir(store, DATA_WORKOUT_DIR)
+        summary = f"{stats['sessions']} session(s)"
+
+    return {
+        "category": category,
+        "filename": name,
+        "bytes": stored["bytes"],
+        "replaced": stored["replaced"],
+        "summary": summary,
+    }
 
 
 # ---------------------------------------------------------------------------

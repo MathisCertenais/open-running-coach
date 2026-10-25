@@ -17,6 +17,11 @@ computes your statistics, and displays the route on a map. Drop files into
 - 📊 Statistics: distance, moving time, average pace, elevation, max speed,
   heart rate (when present in the file)
 - 📝 Personal notes per run (persisted in `coach.db`)
+- ⬆️ **Drag and drop import**: drop KMZ/GPX/TCX activities, nutrition exports or
+  workout files into the Import view. Each zone only accepts the formats its
+  importer understands, and a file is parsed before it replaces anything.
+- 🌙 **Dark theme**: follows the operating system, one click to override; the
+  choice is remembered.
 - 🔄 Automatic re-read of the `data/` folder (↻ button or reload)
 
 **Advanced analysis (per run)**

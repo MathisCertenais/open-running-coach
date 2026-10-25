@@ -66,6 +66,7 @@
       <button class="nav-btn" data-view="planner">Schedule</button>
       <button class="nav-btn" data-view="activities">Race history</button>
       <button class="nav-btn" data-view="fuel">Fuel</button>
+      <button class="nav-btn" data-view="import">Import</button>
       <details class="nav-more">
         <summary class="nav-btn">More</summary>
         <div class="nav-more-menu">
@@ -449,6 +450,65 @@
           <button type="submit" class="btn">Add shoe</button>
         </form>
         <div id="shoes-list" class="shoes-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Import ================= -->
+  <section id="view-import" class="view hidden" aria-labelledby="import-title">
+    <div class="view-head">
+      <h2 id="import-title">Import data</h2>
+    </div>
+    <p class="view-sub">
+      Drop files into the matching zone, or press <kbd>Enter</kbd> on a zone to
+      choose them. Each folder only accepts the formats its importer understands,
+      so a file cannot land somewhere nothing will read it. Files are written to
+      <code>data/</code>; a file with the same name is replaced.
+    </p>
+
+    <div class="drop-grid">
+      <div class="panel drop-zone" data-category="running">
+        <h3>Running activities</h3>
+        <p class="panel-sub">
+          OpenTracks <strong>KMZ</strong>, Strava <strong>GPX</strong>,
+          Garmin <strong>TCX</strong>.
+        </p>
+        <div class="drop-target" tabindex="0" role="button" aria-describedby="drop-running-hint">
+          <span class="drop-icon" aria-hidden="true">⬇</span>
+          <span class="drop-text">Drag activity files here, or press Enter to choose</span>
+          <input type="file" class="sr-only" id="file-running" multiple accept=".kmz,.gpx,.tcx" tabindex="-1" />
+        </div>
+        <p class="drop-hint" id="drop-running-hint">Stored in <code>data/running/</code>.</p>
+        <div class="drop-status" id="status-running" role="status" aria-live="polite"></div>
+      </div>
+
+      <div class="panel drop-zone" data-category="nutrition">
+        <h3>Nutrition, weight &amp; steps</h3>
+        <p class="panel-sub">
+          Waistline or OpenNutriTracker <strong>CSV</strong>, <strong>JSON</strong>
+          exports, or an OpenNutriTracker <strong>ZIP</strong>.
+        </p>
+        <div class="drop-target" tabindex="0" role="button" aria-describedby="drop-nutrition-hint">
+          <span class="drop-icon" aria-hidden="true">⬇</span>
+          <span class="drop-text">Drag a nutrition export here, or press Enter to choose</span>
+          <input type="file" class="sr-only" id="file-nutrition" multiple accept=".csv,.json,.zip" tabindex="-1" />
+        </div>
+        <p class="drop-hint" id="drop-nutrition-hint">Stored in <code>data/nutrition/</code>.</p>
+        <div class="drop-status" id="status-nutrition" role="status" aria-live="polite"></div>
+      </div>
+
+      <div class="panel drop-zone" data-category="workout">
+        <h3>Strength &amp; mobility</h3>
+        <p class="panel-sub">
+          wger <strong>JSON</strong> or a generic <strong>CSV</strong> of dated sessions.
+        </p>
+        <div class="drop-target" tabindex="0" role="button" aria-describedby="drop-workout-hint">
+          <span class="drop-icon" aria-hidden="true">⬇</span>
+          <span class="drop-text">Drag a workout export here, or press Enter to choose</span>
+          <input type="file" class="sr-only" id="file-workout" multiple accept=".csv,.json" tabindex="-1" />
+        </div>
+        <p class="drop-hint" id="drop-workout-hint">Stored in <code>data/workout/</code>.</p>
+        <div class="drop-status" id="status-workout" role="status" aria-live="polite"></div>
       </div>
     </div>
   </section>

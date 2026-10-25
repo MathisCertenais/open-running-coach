@@ -353,3 +353,22 @@ WEIGHT_LOSS_WARN_PCT_PER_WEEK = 1.0
 # Daily steps: below these thresholds the athlete is considered sedentary.
 STEPS_SEDENTARY_WARN = 5000
 STEPS_SEDENTARY_HIGH = 2500
+
+# ---------------------------------------------------------------------------
+# File uploads (drag and drop into the UI)
+# ---------------------------------------------------------------------------
+# Each data folder only accepts the formats its importer understands, so a file
+# can never land somewhere nothing will read it.
+UPLOAD_ALLOWED_EXTENSIONS = {
+    "running": (".kmz", ".gpx", ".tcx"),
+    "nutrition": (".csv", ".json", ".zip"),
+    "workout": (".csv", ".json"),
+}
+UPLOAD_DIRECTORIES = {
+    "running": DATA_RUNNING_DIR,
+    "nutrition": DATA_NUTRITION_DIR,
+    "workout": DATA_WORKOUT_DIR,
+}
+# Refuse anything larger than this: an activity export is a few MB at most, and
+# reading an unbounded body into memory would be a denial-of-service vector.
+UPLOAD_MAX_BYTES = 50 * 1024 * 1024

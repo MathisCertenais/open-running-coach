@@ -163,6 +163,18 @@ class Store:
             )
             self._conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS injury_verdicts (
+                    location        TEXT NOT NULL,
+                    side            TEXT NOT NULL DEFAULT '',
+                    pain_first_date TEXT NOT NULL,
+                    verdict         TEXT NOT NULL,
+                    updated_at      TEXT NOT NULL,
+                    PRIMARY KEY (location, side, pain_first_date)
+                )
+                """
+            )
+            self._conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS supplements (
                     id         INTEGER PRIMARY KEY AUTOINCREMENT,
                     name       TEXT NOT NULL,
@@ -633,6 +645,50 @@ class Store:
         for row in rows:
             grouped.setdefault(row["session_id"], []).append(dict(row))
         return grouped
+
+    # ------------------------------------------------------------------
+    # Injury verdicts
+    # ------------------------------------------------------------------
+    def set_injury_verdict(
+        self, location: str, side: str, pain_first_date: str, verdict: str
+    ) -> None:
+        """Record whether the athlete finds a link plausible.
+
+        An empty verdict clears it. Stored per episode so the heuristic can be
+        tuned later against the athlete's own judgement.
+        """
+        with self._conn:
+            if not verdict:
+                self._conn.execute(
+                    """
+                    DELETE FROM injury_verdicts
+                    WHERE location = ? AND side = ? AND pain_first_date = ?
+                    """,
+                    (location, side, pain_first_date),
+                )
+                return
+            self._conn.execute(
+                """
+                INSERT INTO injury_verdicts
+                    (location, side, pain_first_date, verdict, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(location, side, pain_first_date) DO UPDATE SET
+                    verdict = excluded.verdict, updated_at = excluded.updated_at
+                """,
+                (
+                    location,
+                    side,
+                    pain_first_date,
+                    verdict,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+
+    def injury_verdicts(self) -> dict[tuple[str, str, str], str]:
+        rows = self._conn.execute(
+            "SELECT location, side, pain_first_date, verdict FROM injury_verdicts"
+        ).fetchall()
+        return {(r[0], r[1], r[2]): r[3] for r in rows}
 
     def delete_orphan_exercises(self) -> None:
         """Drop exercises whose session no longer exists."""

@@ -14,7 +14,7 @@ the matched keyword so the athlete can judge it.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from .config import (
     INJURY_ACTIVE_DAYS,
@@ -111,11 +111,37 @@ def _episode(location: str, side: str, items: list[dict], today: date) -> dict:
     }
 
 
+def hard_session_base_rate(
+    dates: list[date], horizon: date, lookback_days: int = 2
+) -> float | None:
+    """Share of days that had a qualifying session in the preceding window.
+
+    This is the denominator the injury panel was missing: if a hard leg session
+    falls before 45% of all days anyway, then finding one before your pain
+    episode tells you nothing. Returns None when there is not enough history to
+    say anything (less than two weeks).
+    """
+    if not dates:
+        return None
+    start = min(dates)
+    days = (horizon - start).days + 1
+    if days < 14:
+        return None
+    hits = 0
+    for offset in range(days):
+        day = start + timedelta(days=offset)
+        if any(0 <= (day - session).days <= lookback_days for session in dates):
+            hits += 1
+    return round(hits / days, 3)
+
+
 def link_sessions_to_episodes(
     episodes: list[dict],
     sessions: list[dict],
     lookback_hours: int = INJURY_LOOKBACK_HOURS,
     min_rpe: int = INJURY_SESSION_MIN_RPE,
+    today: date | None = None,
+    verdicts: dict[tuple[str, str, str], str] | None = None,
 ) -> dict:
     """Find hard sessions that loaded the muscles of a pain episode.
 
@@ -123,7 +149,15 @@ def link_sessions_to_episodes(
     lower-limb pain locations, where the muscle mapping is meaningful, and only
     for completed sessions inside the lookback window. Sessions with no
     recorded exercises cannot contribute: the app does not guess what was done.
+
+    The summary also reports the **base rate** — how often a qualifying session
+    precedes an ordinary day — so the number can be read against chance rather
+    than in isolation.
     """
+    today = today or date.today()
+    verdicts = verdicts or {}
+    lookback_days = max(1, round(lookback_hours / 24))
+
     prepared = []
     for session in sessions:
         if (session.get("status") or "completed") != "completed":
@@ -141,17 +175,39 @@ def link_sessions_to_episodes(
 
     links: list[dict] = []
     for episode in episodes:
+        episode["verdict"] = verdicts.get(
+            (episode["location"], episode["side"], episode["first_date"])
+        )
+        first = _to_date(episode["first_date"])
+        if first is None:
+            continue
+
+        # Everything that happened in the week before, linked or not: the
+        # timeline is what makes the claim legible.
+        episode["preceding"] = [
+            {
+                "date": candidate["session"].get("date"),
+                "title": candidate["session"].get("title")
+                or candidate["session"].get("kind"),
+                "kind": candidate["session"].get("kind"),
+                "rpe": candidate["session"].get("rpe"),
+                "exercises": [
+                    exercise.get("name")
+                    for exercise in candidate["session"].get("exercises") or []
+                ],
+            }
+            for candidate in sorted(prepared, key=lambda c: c["date"], reverse=True)
+            if 0 <= (first - candidate["date"]).days <= 7
+        ]
+
         if not episode.get("explainable"):
             continue
         muscles = muscles_for_pain(episode["location"])
         if not muscles:
             continue
-        first = _to_date(episode["first_date"])
-        if first is None:
-            continue
         for candidate in prepared:
             gap = first - candidate["date"]
-            if gap.days < 0 or gap.days > 2:
+            if gap.days < 0 or gap.days > lookback_days:
                 continue
             hits = exercises_loading(muscles, candidate["session"].get("exercises"))
             if not hits:
@@ -176,16 +232,35 @@ def link_sessions_to_episodes(
                 }
             )
 
-    explained = len({link["pain_first_date"] for link in links})
     episodes_lower = [e for e in episodes if e.get("explainable")]
-    session_dates = sorted({link["session_date"] for link in links})
+    explained = len({link["pain_first_date"] for link in links})
+    base_rate = hard_session_base_rate(
+        sorted({candidate["date"] for candidate in prepared}),
+        today,
+        lookback_days=lookback_days,
+    )
+    observed = round(explained / len(episodes_lower), 3) if episodes_lower else None
+
+    if base_rate is None or observed is None:
+        reading = "not enough history to compare with chance"
+    elif len(episodes_lower) < 3:
+        reading = "too few episodes to compare with chance"
+    elif observed >= max(0.5, base_rate * 1.5):
+        reading = "more often than your usual weeks"
+    else:
+        reading = "no different from your usual weeks"
+
     return {
+        "episodes": episodes,
         "links": links,
         "summary": {
             "episodes": len(episodes),
             "episodes_lower_limb": len(episodes_lower),
             "episodes_with_hard_session": explained,
-            "sessions_involved": session_dates,
+            "observed_rate": observed,
+            "base_rate": base_rate,
+            "reading": reading,
+            "sessions_involved": sorted({link["session_date"] for link in links}),
             "lookback_hours": lookback_hours,
             "min_rpe": min_rpe,
             "note": (

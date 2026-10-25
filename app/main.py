@@ -856,6 +856,13 @@ def api_delete_session(session_id: int) -> dict:
 # ---------------------------------------------------------------------------
 # Endpoints — injuries
 # ---------------------------------------------------------------------------
+class InjuryVerdictPayload(BaseModel):
+    location: str
+    side: str = ""
+    first_date: str
+    verdict: str = ""
+
+
 @app.get("/api/injuries")
 def api_injuries() -> dict:
     """Injury episodes derived from post-run pain reports, plus session links."""
@@ -866,8 +873,28 @@ def api_injuries() -> dict:
         if activity.start_time
     }
     episodes = injuries.build_episodes(store.all_feedback(), dates)
-    linked = injuries.link_sessions_to_episodes(episodes, store.list_sessions())
+    linked = injuries.link_sessions_to_episodes(
+        episodes,
+        store.list_sessions(),
+        today=datetime.now(timezone.utc).date(),
+        verdicts=store.injury_verdicts(),
+    )
     return {"episodes": episodes, **linked}
+
+
+@app.put("/api/injuries/verdict")
+def api_set_injury_verdict(payload: InjuryVerdictPayload) -> dict:
+    """Record the athlete's own judgement on a suggested link."""
+    _check_enum("verdict", payload.verdict, ("", "plausible", "coincidence"))
+    store.set_injury_verdict(
+        payload.location, payload.side, payload.first_date, payload.verdict
+    )
+    return {
+        "location": payload.location,
+        "side": payload.side,
+        "first_date": payload.first_date,
+        "verdict": payload.verdict,
+    }
 
 
 # ---------------------------------------------------------------------------

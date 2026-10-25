@@ -1745,6 +1745,24 @@ function computeAge(iso) {
   return age >= 0 && age < 130 ? age : null;
 }
 
+async function loadInjuries() {
+  const data = await fetch("/api/injuries")
+    .then((r) => (r.ok ? r.json() : {}))
+    .catch(() => ({}));
+  renderInjuries(data);
+}
+
+async function setInjuryVerdict(button) {
+  const { verdict, loc, side, date } = button.dataset;
+  const next = button.classList.contains("active") ? "" : verdict;
+  await fetch("/api/injuries/verdict", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ location: loc, side, first_date: date, verdict: next }),
+  });
+  await loadInjuries();
+}
+
 async function loadProfile() {
   // Independent requests: one failing endpoint must not blank the whole page.
   const get = (url) => fetch(url).then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
@@ -1917,11 +1935,13 @@ function renderInjuries(data) {
 
   const lowerCount = summary.episodes_lower_limb || 0;
   const plural = lowerCount === 1 ? "" : "s";
-  const verb = lowerCount === 1 ? "was" : "were";
+  const pct = (value) => `${Math.round((value || 0) * 100)}%`;
   const summaryLine =
-    lowerCount > 0
-      ? `<p class="muted">${summary.episodes_with_hard_session} of ${lowerCount} lower-limb episode${plural} ${verb} preceded by a hard session (RPE ≥ ${summary.min_rpe}) within ${summary.lookback_hours} h. ${esc(summary.note || "")}</p>`
-      : "";
+    lowerCount === 0
+      ? ""
+      : summary.base_rate != null
+        ? `<p class="muted">A hard session falls before <b>${pct(summary.observed_rate)}</b> of your ${lowerCount} lower-limb episode${plural}, versus <b>${pct(summary.base_rate)}</b> of all your days — ${esc(summary.reading)}.</p>`
+        : `<p class="muted">${esc(summary.reading)}.</p>`;
 
   const cards = episodes
     .map((ep) => {
@@ -1930,16 +1950,39 @@ function renderInjuries(data) {
       const linkHtml = epLinks
         .map(
           (l) => `
-          <li>
-            <b>${esc(l.session_title || "Session")}</b> on ${fmtDate(l.session_date)}
-            (RPE ${l.session_rpe}) — ${esc(l.explanation)}
+          <li class="injury-link">
+            <b>${esc(l.session_title || "Session")}</b> · ${fmtDate(l.session_date)}
+            · RPE ${l.session_rpe} — ${esc(l.explanation)}
             <span class="muted">(${l.hours_before} h before the first report)</span>
           </li>`,
         )
         .join("");
+
+      const preceding = (ep.preceding || [])
+        .slice(0, 6)
+        .map(
+          (p) => `<li><span class="muted">${fmtDate(p.date)}</span> · ${esc(p.title || p.kind)}${
+            p.rpe ? ` · RPE ${p.rpe}` : ""
+          }${p.exercises && p.exercises.length ? ` · ${esc(p.exercises.join(", "))}` : ""}</li>`,
+        )
+        .join("");
+
       const badge = ep.active
         ? '<span class="badge caution">active</span>'
         : '<span class="badge unknown">settled</span>';
+
+      const verdictButtons = ep.explainable
+        ? `<div class="injury-verdict" role="group" aria-label="Is this link plausible?">
+             <button class="link-btn ${ep.verdict === "plausible" ? "active" : ""}"
+               data-verdict="plausible" data-loc="${esc(ep.location)}"
+               data-side="${esc(ep.side)}" data-date="${esc(ep.first_date)}">Plausible</button>
+             <button class="link-btn ${ep.verdict === "coincidence" ? "active" : ""}"
+               data-verdict="coincidence" data-loc="${esc(ep.location)}"
+               data-side="${esc(ep.side)}" data-date="${esc(ep.first_date)}">Coincidence</button>
+             <span class="muted">${ep.verdict ? `you said: ${esc(ep.verdict)}` : "not reviewed"}</span>
+           </div>`
+        : "";
+
       return `
         <div class="injury-card ${ep.active ? "active" : ""}">
           <div class="injury-head">
@@ -1951,12 +1994,22 @@ function renderInjuries(data) {
             ${fmtDate(ep.first_date)} → ${fmtDate(ep.last_date)} ·
             ${ep.reports} report${ep.reports === 1 ? "" : "s"}${ep.max_severity != null ? ` · max ${ep.max_severity}/10` : ""}
           </div>
+          ${
+            preceding
+              ? `<details class="injury-timeline"><summary>The week before</summary><ul>${preceding}</ul></details>`
+              : ""
+          }
           ${linkHtml ? `<ul class="injury-links">${linkHtml}</ul>` : ep.explainable ? '<p class="muted">No hard session loading these muscles in the 48 h before.</p>' : ""}
+          ${verdictButtons}
         </div>`;
     })
     .join("");
 
   el.innerHTML = summaryLine + cards;
+
+  el.querySelectorAll("[data-verdict]").forEach((button) => {
+    button.addEventListener("click", () => setInjuryVerdict(button));
+  });
 }
 
 /* ----------------------------- Shoes ------------------------------ */

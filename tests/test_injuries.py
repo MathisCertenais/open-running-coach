@@ -4,8 +4,14 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from app.config import INJURY_ACTIVE_DAYS, INJURY_EPISODE_GAP_DAYS
-from app.injuries import build_episodes, link_sessions_to_episodes
+from app.injuries import (
+    build_episodes,
+    hard_session_base_rate,
+    link_sessions_to_episodes,
+)
 
 TODAY = date(2026, 4, 30)
 
@@ -213,3 +219,88 @@ def test_upper_body_pain_is_not_linked_to_leg_work():
 
     # "back" is not a lower-limb location: the engine does not guess.
     assert result["links"] == []
+
+
+# ---------------------------------------------------------------------------
+# Base rate and verdicts
+# ---------------------------------------------------------------------------
+def test_base_rate_counts_the_days_following_a_hard_session():
+    from datetime import timedelta
+
+    start = date(2026, 4, 1)
+    every_day = [start + timedelta(days=n) for n in range(14)]
+    only_first = [start]
+
+    busy = hard_session_base_rate(every_day, start + timedelta(days=13))
+    quiet = hard_session_base_rate(only_first, start + timedelta(days=13))
+
+    assert busy == 1.0
+    assert quiet == pytest.approx(3 / 14, abs=0.01)
+
+
+def test_base_rate_needs_two_weeks_of_history():
+    from datetime import timedelta
+
+    start = date(2026, 4, 1)
+
+    assert hard_session_base_rate([start], start + timedelta(days=5)) is None
+    assert hard_session_base_rate([], date(2026, 4, 30)) is None
+
+
+def test_reading_refuses_to_conclude_from_one_episode():
+    episodes = episodes_for([(feedback(location="knee"), "2026-04-10")])
+
+    result = link_sessions_to_episodes(
+        episodes, [session("2026-04-09")], today=date(2026, 4, 12)
+    )
+
+    assert result["summary"]["reading"] == "not enough history to compare with chance"
+
+
+def test_reading_compares_the_observed_rate_with_the_base_rate():
+    episodes = episodes_for(
+        [
+            (feedback(location="knee"), "2026-04-10"),
+            (feedback(location="knee"), "2026-05-10"),
+            (feedback(location="knee"), "2026-06-10"),
+        ]
+    )
+    sessions = [
+        session(day, sid=n)
+        for n, day in enumerate(
+            ["2026-04-09", "2026-05-09", "2026-06-09", "2026-06-25", "2026-06-28"]
+        )
+    ]
+
+    result = link_sessions_to_episodes(episodes, sessions, today=date(2026, 6, 30))
+
+    assert result["summary"]["observed_rate"] == 1.0
+    assert result["summary"]["base_rate"] is not None
+    assert result["summary"]["reading"] == "more often than your usual weeks"
+
+
+def test_preceding_lists_the_week_before_each_episode():
+    episodes = episodes_for([(feedback(location="knee"), "2026-04-10")])
+    sessions = [
+        session("2026-04-08", sid=1),
+        session("2026-04-01", sid=2),  # 9 days before: outside the week
+        session("2026-04-20", sid=3),  # after the pain
+    ]
+
+    result = link_sessions_to_episodes(episodes, sessions, today=date(2026, 4, 30))
+
+    preceding = result["episodes"][0]["preceding"]
+    assert [p["date"] for p in preceding] == ["2026-04-08"]
+
+
+def test_a_verdict_is_attached_to_its_episode():
+    episodes = episodes_for([(feedback(location="knee"), "2026-04-10")])
+
+    result = link_sessions_to_episodes(
+        episodes,
+        [session("2026-04-09")],
+        today=date(2026, 4, 30),
+        verdicts={("knee", "left", "2026-04-10"): "plausible"},
+    )
+
+    assert result["episodes"][0]["verdict"] == "plausible"

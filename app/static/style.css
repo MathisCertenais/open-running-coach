@@ -837,3 +837,10 @@ body.onboarding-open { overflow: hidden; }
   font-size: 13px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
 }
+
+/* ----- Injury timeline + verdict ----- */
+.injury-timeline { margin: 8px 0 0; font-size: 12px; }
+.injury-timeline summary { cursor: pointer; color: var(--text-muted); }
+.injury-timeline ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.injury-verdict { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; font-size: 12px; }
+.injury-verdict .link-btn.active { font-weight: 700; text-decoration: underline; }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import tempfile
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -17,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import activity as activity_mod
-from . import analysis, coach_llm, coaching, injuries
+from . import analysis, coach_llm, coaching, injuries, pacing
 from . import connectors as connectors_mod
 from . import exercises as exercises_mod
 from . import report as report_mod
@@ -1046,7 +1047,11 @@ def api_coaching_intensity() -> dict:
 
 @app.get("/api/coaching/vo2max")
 def api_coaching_vo2max() -> dict:
-    return coaching.vo2max_and_predictions(_sorted_activities())
+    activities = _sorted_activities()
+    return {
+        **coaching.vo2max_and_predictions(activities),
+        **coaching.performance_profile(activities),
+    }
 
 
 @app.get("/api/coaching/plans")
@@ -1209,6 +1214,51 @@ def api_coaching_review(payload: Optional[CoachReviewPayload] = None) -> dict:
     except coach_llm.LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     return {"review": review}
+
+
+# ---------------------------------------------------------------------------
+# Race-day pacing
+# ---------------------------------------------------------------------------
+@app.post("/api/coaching/pacing")
+async def api_coaching_pacing(
+    request: Request, target_time_s: int, step_m: int = 200
+) -> dict:
+    """Build a constant-effort pacing plan from a course GPX.
+
+    The course is parsed in memory and discarded: a route is not an activity and
+    must not appear in the log.
+    """
+    if not 300 <= target_time_s <= 86_400:
+        raise HTTPException(
+            status_code=400, detail="Target time must be between 5 minutes and 24 hours"
+        )
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="Empty course file")
+    if len(body) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Course file is too large")
+
+    handle = tempfile.NamedTemporaryFile(suffix=".gpx", delete=False)
+    try:
+        handle.write(body)
+        handle.close()
+        points = pacing.read_route(Path(handle.name))
+        if len(points) < 2:
+            raise HTTPException(
+                status_code=422,
+                detail="No track or route points found in the file",
+            )
+        plan = pacing.build_plan(
+            points, target_time_s, step_m=max(50, min(1000, step_m))
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Could not read the course: {exc}")
+    finally:
+        Path(handle.name).unlink(missing_ok=True)
+
+    return plan
 
 
 # ---------------------------------------------------------------------------

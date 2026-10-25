@@ -21,9 +21,8 @@ from app.analysis import (
     monthly_stats,
 )
 from app.config import (
-    GAP_DOWNHILL_FACTOR,
-    GAP_MAX_DOWN_GRADE,
-    GAP_UPHILL_FACTOR,
+    GAP_FACTOR_MIN,
+    GAP_MAX_ABS_GRADE,
     MAX_MOVING_GAP,
     PACE_ZONES,
 )
@@ -86,16 +85,44 @@ def test_gap_factor_is_one_on_the_flat():
     assert _gap_factor(0.0) == 1.0
 
 
-def test_gap_factor_increases_uphill_and_decreases_downhill():
-    assert _gap_factor(0.05) == pytest.approx(1 + GAP_UPHILL_FACTOR * 0.05)
-    assert _gap_factor(-0.05) == pytest.approx(1 + GAP_DOWNHILL_FACTOR * -0.05)
+def test_gap_factor_follows_minetti():
+    # Minetti et al. (2002): +5% costs ~30% more per metre, -5% ~24% less.
+    assert _gap_factor(0.05) == pytest.approx(1.30, abs=0.02)
+    assert _gap_factor(-0.05) == pytest.approx(0.76, abs=0.02)
+    assert _gap_factor(0.10) == pytest.approx(1.66, abs=0.03)
 
 
-def test_gap_factor_caps_the_descent_bonus():
-    steep = _gap_factor(-0.5)
-    capped = _gap_factor(-GAP_MAX_DOWN_GRADE)
+def test_gap_factor_is_not_monotonic_on_steep_descents():
+    # Minetti's cost curve turns back up: very steep descents cost more than
+    # gentle ones, so the "downhill bonus" peaks around 20%.
+    assert _gap_factor(-0.20) < _gap_factor(-0.10)
+    assert _gap_factor(-0.45) > _gap_factor(-0.20)
 
-    assert steep == pytest.approx(capped)
+
+def test_gap_grade_is_clamped_to_the_fitted_range():
+    assert _gap_factor(-0.9) == pytest.approx(_gap_factor(-GAP_MAX_ABS_GRADE))
+    assert _gap_factor(0.9) == pytest.approx(_gap_factor(GAP_MAX_ABS_GRADE))
+    assert _gap_factor(-0.45) >= GAP_FACTOR_MIN
+
+
+def test_gap_grade_is_measured_over_a_window_not_one_step():
+    points = make_points([(600, 3.0)])
+    spiked = [
+        TrackPoint(
+            lat=p.lat,
+            lon=p.lon,
+            time=p.time,
+            speed=p.speed,
+            ele=100.0 + (40.0 if i == len(points) // 2 else 0.0),
+        )
+        for i, p in enumerate(points)
+    ]
+
+    result = compute_gap(spiked)
+
+    # One 40 m spike over a 3 m step is a ~1300% grade. Measured over the 50 m
+    # window, after altitude smoothing, it must be an order of magnitude less.
+    assert abs(result["avg_grade_pct"]) < 40
 
 
 # ---------------------------------------------------------------------------

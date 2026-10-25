@@ -94,12 +94,17 @@ PACE_ZONES = [
     {"name": "Z6 Sprint", "min": 0, "max": 230, "color": "#ef4444"},
 ]
 
-# Grade-Adjusted Pace (GAP) parameters — simplified model.
-# Correction factor per % of grade (e.g. 3.0 => +3% of "equivalent" speed per %
-# of uphill grade). Descents are capped at GAP_MAX_DOWN_GRADE.
-GAP_UPHILL_FACTOR = 3.0
-GAP_DOWNHILL_FACTOR = 0.5
-GAP_MAX_DOWN_GRADE = 0.15  # 15%
+# Grade-Adjusted Pace (GAP).
+# The correction uses Minetti et al. (2002), "Energy cost of walking and running
+# at extreme slopes", J Appl Physiol: the cost of running per metre rises with
+# gradient and is fitted from -45% to +45%. The flat-equivalent speed is
+#        v_flat = v * Cr(grade) / Cr(0)
+# Grade is computed over at least GAP_WINDOW_M metres: a 1-3 m step carries more
+# GPS altitude noise than slope.
+GAP_WINDOW_M = 50.0
+GAP_MAX_ABS_GRADE = 0.45  # outside Minetti's fitted range the grade is clamped
+GAP_FACTOR_MIN = 0.45
+GAP_FACTOR_MAX = 4.0
 
 # Matched runs: detection of identical routes.
 MATCH_CELL_DEG = 0.0008  # grid cell size (~60-90 m)
@@ -429,3 +434,15 @@ WORKOUT_LOAD_WEIGHTS = {
     "tempo": 4.0,
     "intervals": 5.0,
 }
+
+# ---------------------------------------------------------------------------
+# Critical speed and durability
+# ---------------------------------------------------------------------------
+# Performances used to fit the speed-duration model d = CS*t + D'. Very short
+# efforts are dominated by acceleration, very long ones by fuelling.
+CRITICAL_SPEED_MIN_S = 120.0
+CRITICAL_SPEED_MAX_S = 3600.0
+# A run must be at least this long before a fade index means anything.
+FADE_MIN_DISTANCE_M = 8000.0
+# Runs compared to report a trend.
+FADE_TREND_RUNS = 5

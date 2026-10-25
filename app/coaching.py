@@ -14,7 +14,12 @@ from typing import Optional
 
 from . import injuries
 from .activity import compute_stats
-from .analysis import compute_best_efforts, compute_pace_zones
+from .analysis import (
+    compute_best_efforts,
+    compute_pace_zones,
+    critical_speed,
+    fade_index,
+)
 from .config import (
     ACWR_ACUTE_DAYS,
     ACWR_BANDS,
@@ -23,6 +28,8 @@ from .config import (
     ATL_TAU_DAYS,
     CTL_CALIBRATION_DAYS,
     CTL_TAU_DAYS,
+    FADE_MIN_DISTANCE_M,
+    FADE_TREND_RUNS,
     FORM_NEUTRAL_BAND,
     INTENSITY_GROUPS,
     INTENSITY_ROLLING_DAYS,
@@ -412,6 +419,71 @@ def project_plan(plan: dict, start_ctl: float) -> dict:
         "final_ctl": round(ctl, 1),
         "peak_ctl": peak,
         "method": "session minutes x type weight, spread over 7 days, CTL tau 42",
+    }
+
+
+def performance_profile(activities: list[Activity]) -> dict:
+    """Critical speed and durability, both derived from what was recorded.
+
+    Critical speed is fitted to the athlete's own best efforts (d = CS·t + D'),
+    which needs no heart rate and no reference table. Durability is the fade
+    index of runs long enough to say something: how much the second half slowed
+    in grade-adjusted terms.
+    """
+    best: dict[float, dict] = {}
+    for activity in activities:
+        for effort in compute_best_efforts(activity):
+            distance = effort["distance_m"]
+            if distance not in best or effort["time_s"] < best[distance]["time_s"]:
+                best[distance] = {
+                    "distance_m": distance,
+                    "time_s": effort["time_s"],
+                    "label": effort["label"],
+                }
+
+    fit = critical_speed(list(best.values()))
+
+    runs = []
+    for activity in activities:
+        if activity.start_time is None:
+            continue
+        fade = fade_index(activity.points, FADE_MIN_DISTANCE_M)
+        if not fade:
+            continue
+        runs.append(
+            {
+                **fade,
+                "date": activity.start_time.date().isoformat(),
+                "name": activity.name,
+                "activity_id": activity.id,
+            }
+        )
+    runs.sort(key=lambda run: run["date"], reverse=True)
+
+    def _mean_fade(items):
+        values = [r["fade_pct"] for r in items]
+        return round(sum(values) / len(values), 2) if values else None
+
+    recent = runs[:FADE_TREND_RUNS]
+    previous = runs[FADE_TREND_RUNS : FADE_TREND_RUNS * 2]
+    recent_avg = _mean_fade(recent)
+    previous_avg = _mean_fade(previous)
+    trend = (
+        round(recent_avg - previous_avg, 2)
+        if recent_avg is not None and previous_avg is not None
+        else None
+    )
+
+    return {
+        "critical_speed": fit,
+        "durability": {
+            "runs": runs[:10],
+            "min_distance_m": FADE_MIN_DISTANCE_M,
+            "recent_avg_fade_pct": recent_avg,
+            "previous_avg_fade_pct": previous_avg,
+            "trend_pct": trend,
+            "runs_compared": [len(recent), len(previous)],
+        },
     }
 
 

@@ -35,6 +35,15 @@ computes your statistics, and displays the route on a map. Drop files into
   runs that felt much harder than the pace implies.
 - 🧾 **Report export**: a one-page Markdown or print/PDF summary for a coach or
   physiotherapist, generated locally.
+- 🏁 **Race-day pacing plan**: import the course GPX and get per-kilometre splits
+  at constant *effort* — climbs slower, descents faster — solved so the total
+  lands on your target time.
+- 📈 **Critical speed and fade**: a speed-duration fit from your own efforts
+  (no reference table, no heart rate) and the second-half slowdown of your long
+  runs, grade-adjusted.
+- ⛰️ **Grade handling**: GAP uses the Minetti (2002) energy-cost polynomial with
+  the gradient measured over at least 50 m, so GPS altitude noise cannot invent
+  a climb.
 - 🌙 **Dark theme**: follows the operating system, one click to override; the
   choice is remembered.
 - 🔄 Automatic re-read of the `data/` folder (↻ button or reload)

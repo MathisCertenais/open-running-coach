@@ -727,6 +727,7 @@ function renderCoachingTab() {
   else if (tab === "intensity") { body.innerHTML = '<p class="empty-note">Loading…</p>'; loadIntensity(); }
   else if (tab === "vo2max") { body.innerHTML = '<p class="empty-note">Loading…</p>'; loadVo2max(); }
   else if (tab === "plans") renderPlans();
+  else if (tab === "pacing") renderPacing();
   else if (tab === "coach") renderCoach();
 }
 
@@ -1038,6 +1039,7 @@ function renderIntensity(data) {
       <details class="explain"><summary>How is this computed?</summary>
         <p>Each moving second is assigned to a pace zone (Z1 recovery → Z6 sprint). Zones are grouped into <b>Easy</b> (Z1+Z2), <b>Moderate</b> (Z3) and <b>Hard</b> (Z4–Z6). The % is the share of moving time spent in each group.</p>
         <p>The 80/20 ideal: ~80% easy, and the remaining ~20% should favour hard work over moderate. Too much moderate ("grey zone") is the classic endurance-training mistake.</p>
+        <p><b>Measured by effort, not by speed.</b> Each step is classified on its grade-adjusted pace (Minetti et al. 2002, grade measured over 50&nbsp;m). On hilly terrain a week therefore looks harder here than a raw-pace chart would show — because it was.</p>
       </details>
     </div>`;
   body.innerHTML = html;
@@ -1078,14 +1080,166 @@ function renderVo2max(data) {
         <thead><tr><th scope="col">Distance</th><th scope="col" class="num">Predicted</th><th scope="col" class="num">Predicted pace</th><th scope="col" class="num">Your best</th></tr></thead>
         <tbody>${predRows}</tbody>
       </table>
+      <h4 class="chart-title">Critical speed</h4>
+      ${renderCriticalSpeed(data.critical_speed)}
+
+      <h4 class="chart-title">Durability (fade)</h4>
+      ${renderDurability(data.durability)}
+
       <details class="explain"><summary>How is this computed?</summary>
         <p><b>VO2max (Daniels VDOT)</b>: from a performance (distance D, time T), velocity v = D/T and time t = T. Then:</p>
         <p><code>%VO2max = 0.8 + 0.1894·e^(−0.012778·t) + 0.2990·e^(−0.19326·t)</code></p>
         <p><code>VO2 = −4.60 + 0.1823·v + 0.000104·v²</code> and <code>VDOT = VO2 / %VO2max</code>.</p>
         <p>We take the highest VDOT across your best efforts. Predictions use the Riegel exponent 1.06. Short-distance efforts predict long races less reliably — use them as a rough guide.</p>
+        <p><b>Critical speed</b> fits <code>distance = CS × time + D′</code> to your efforts between 2 and 60 minutes: the slope is the speed you can hold without emptying a finite reserve (D′). Unlike a table built from other athletes, it comes from your own points.</p>
+        <p><b>Fade</b> compares grade-adjusted pace in the two halves of a run. Positive means you slowed down; it is the dimension VO2max does not measure.</p>
       </details>
     </div>`;
   body.innerHTML = html;
+}
+
+function renderCriticalSpeed(cs) {
+  if (!cs) {
+    return '<p class="empty-note">Not enough efforts between 2 and 60 minutes to fit a curve.</p>';
+  }
+  const warnings = (cs.warnings || [])
+    .map((w) => `<li>${esc(w)}</li>`)
+    .join("");
+  return `
+    <div class="vo2max-head">
+      <div class="metric-card"><span class="metric-value">${fmtPace(cs.pace_s_per_km)}</span><span class="metric-label">Critical pace</span></div>
+      <div class="metric-card"><span class="metric-value">${cs.d_prime_m} m</span><span class="metric-label">D′ distance reserve</span></div>
+      <div class="metric-card"><span class="metric-value">${cs.r2 != null ? cs.r2.toFixed(3) : "—"}</span><span class="metric-label">Fit R² · ${cs.points} efforts</span></div>
+    </div>
+    ${warnings ? `<ul class="divergence-list">${warnings}</ul>` : ""}`;
+}
+
+function renderDurability(d) {
+  if (!d || !(d.runs || []).length) {
+    return '<p class="empty-note">No run long enough yet to measure a fade.</p>';
+  }
+  const rows = d.runs
+    .map(
+      (r) => `<tr>
+        <td>${fmtDate(r.date)}</td>
+        <td class="num">${(r.distance_m / 1000).toFixed(1)} km</td>
+        <td class="num">${fmtPace(r.first_half_pace_s_per_km)}</td>
+        <td class="num">${fmtPace(r.second_half_pace_s_per_km)}</td>
+        <td class="num ${r.fade_pct > 3 ? "delta-down" : r.fade_pct < -1 ? "delta-up" : ""}">${r.fade_pct > 0 ? "+" : ""}${r.fade_pct.toFixed(1)}%</td>
+      </tr>`,
+    )
+    .join("");
+  const trend =
+    d.trend_pct != null
+      ? `<p class="muted">Recent ${d.runs_compared[0]} long runs fade ${d.recent_avg_fade_pct}% on average, versus ${d.previous_avg_fade_pct}% for the ${d.runs_compared[1]} before → ${d.trend_pct > 0 ? "+" : ""}${d.trend_pct} points.</p>`
+      : "";
+  return `${trend}
+    <table class="data" aria-label="Fade by run">
+      <thead><tr><th scope="col">Date</th><th scope="col" class="num">Distance</th><th scope="col" class="num">First half</th><th scope="col" class="num">Second half</th><th scope="col" class="num">Fade</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+/* --- Race-day pacing --- */
+
+async function renderPacing() {
+  const body = $("#coaching-body");
+  body.innerHTML = `
+    <div class="panel coaching-panel">
+      <h3>Race-day pacing plan</h3>
+      <p class="panel-sub">Import the <b>course</b> GPX — a track or a route file, not one of your runs. The plan holds a constant <b>effort</b>: uphill kilometres are slower and downhill ones faster, using the same grade correction as GAP, so the total lands on your target time.</p>
+      <form id="pacing-form" class="goal-form">
+        <label for="pacing-file">Course GPX
+          <input type="file" id="pacing-file" accept=".gpx,application/gpx+xml" required />
+        </label>
+        <label for="pacing-distance">Target distance
+          <select id="pacing-distance"></select>
+        </label>
+        <label for="pacing-minutes">Target time (minutes)
+          <input type="number" id="pacing-minutes" min="5" max="1440" step="1" />
+        </label>
+        <button class="btn" type="submit">Build plan</button>
+      </form>
+      <p class="muted" id="pacing-hint"></p>
+      <div id="pacing-result"></div>
+      <details class="explain"><summary>How is this computed?</summary>
+        <p>Each course segment gets a grade, corrected with the Minetti (2002) energy-cost polynomial. With <code>s = Σ length / factor</code>, a flat speed <code>v0 = s / target</code> makes the total exactly the target, so the plan hits the time by construction.</p>
+        <p>It is as good as the grade correction and the course file: a route with sparse or noisy elevation will produce a rougher plan.</p>
+      </details>
+    </div>`;
+
+  const select = $("#pacing-distance");
+  const minutes = $("#pacing-minutes");
+  const hint = $("#pacing-hint");
+  try {
+    const data = await fetch("/api/coaching/vo2max").then((r) => r.json());
+    const preds = (data.predictions || []).filter((p) => p.predicted_time_s);
+    select.innerHTML = preds
+      .map((p) => `<option value="${Math.round(p.predicted_time_s / 60)}">${esc(p.label)} — ${fmtDuration(p.predicted_time_s)}</option>`)
+      .join("");
+    if (preds.length) {
+      const half = preds.find((p) => /half|21/i.test(p.label)) || preds[preds.length - 1];
+      minutes.value = Math.round((half.predicted_time_s || 0) / 60);
+      hint.textContent = "Default target is your predicted time; change the distance or type a time to override.";
+    } else {
+      hint.textContent = "No race prediction yet: type a target time.";
+    }
+    select.addEventListener("change", () => {
+      minutes.value = select.value;
+    });
+  } catch (err) {
+    hint.textContent = "Could not load your predictions; type a target time.";
+  }
+
+  $("#pacing-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const file = $("#pacing-file").files[0];
+    const result = $("#pacing-result");
+    if (!file) return;
+    const seconds = Math.round(Number(minutes.value) * 60);
+    if (!seconds || seconds < 300) {
+      result.innerHTML = '<p class="empty-note">Enter a target time of at least 5 minutes.</p>';
+      return;
+    }
+    result.innerHTML = '<p class="empty-note">Building the plan…</p>';
+    const res = await fetch(`/api/coaching/pacing?target_time_s=${seconds}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/gpx+xml" },
+      body: await file.text(),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      result.innerHTML = `<p class="empty-note">${esc(data.detail || "Could not read the course.")}</p>`;
+      return;
+    }
+    renderPacingPlan(result, data);
+  });
+}
+
+function renderPacingPlan(host, plan) {
+  const rows = (plan.splits || [])
+    .map(
+      (s) => `<tr>
+        <td class="num">${s.km}${s.partial ? ` <span class="muted">(${(s.distance_m / 1000).toFixed(2)} km)</span>` : ""}</td>
+        <td class="num">${s.elevation_gain_m > 0 ? "+" : ""}${s.elevation_gain_m} m</td>
+        <td class="num">${s.grade_pct > 0 ? "+" : ""}${s.grade_pct}%</td>
+        <td class="num">${fmtPace(s.pace_s_per_km)}</td>
+        <td class="num">${fmtDuration(s.cumulative_time_s)}</td>
+      </tr>`,
+    )
+    .join("");
+  host.innerHTML = `
+    <div class="vo2max-head" style="margin-top:14px">
+      <div class="metric-card"><span class="metric-value">${(plan.distance_m / 1000).toFixed(1)} km</span><span class="metric-label">Course · ${plan.elevation_gain_m} m climb</span></div>
+      <div class="metric-card"><span class="metric-value">${fmtDuration(plan.target_time_s)}</span><span class="metric-label">Target time</span></div>
+      <div class="metric-card"><span class="metric-value">${fmtPace(plan.average_pace_s_per_km)}</span><span class="metric-label">Average pace</span></div>
+      <div class="metric-card"><span class="metric-value">${fmtPace(plan.flat_equivalent_pace_s_per_km)}</span><span class="metric-label">Flat-equivalent effort</span></div>
+    </div>
+    <table class="data" aria-label="Pacing splits" style="margin-top:12px">
+      <thead><tr><th scope="col" class="num">Km</th><th scope="col" class="num">Climb</th><th scope="col" class="num">Grade</th><th scope="col" class="num">Pace</th><th scope="col" class="num">Elapsed</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p class="muted" style="margin-top:8px">${esc(plan.model)}. Constraint: constant effort — a hilly course is not run at a constant pace.</p>`;
 }
 
 /* --- Plans --- */

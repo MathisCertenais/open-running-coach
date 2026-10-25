@@ -11,9 +11,12 @@ from typing import Optional
 from .activity import compute_stats, is_moving_step, step_distance, step_speed
 from .config import (
     BEST_EFFORT_DISTANCES,
-    GAP_DOWNHILL_FACTOR,
-    GAP_MAX_DOWN_GRADE,
-    GAP_UPHILL_FACTOR,
+    CRITICAL_SPEED_MAX_S,
+    CRITICAL_SPEED_MIN_S,
+    GAP_FACTOR_MAX,
+    GAP_FACTOR_MIN,
+    GAP_MAX_ABS_GRADE,
+    GAP_WINDOW_M,
     MATCH_CELL_DEG,
     MATCH_DISTANCE_RATIO,
     MATCH_JACCARD_THRESHOLD,
@@ -67,20 +70,30 @@ def _steps(points: list[TrackPoint]) -> list[dict]:
 
     altitudes = _smooth_altitudes([p.ele for p in valid], window=5)
 
+    # Cumulative distance, so the gradient can be measured over a real span.
+    cumulative = [0.0]
+    step_distances = []
+    for i in range(1, len(valid)):
+        d = step_distance(valid[i - 1], valid[i])
+        step_distances.append(d)
+        cumulative.append(cumulative[-1] + d)
+    grades = _windowed_grades(cumulative, altitudes)
+
     steps: list[dict] = []
     for i in range(1, len(valid)):
         a, b = valid[i - 1], valid[i]
-        d = step_distance(a, b)
+        d = step_distances[i - 1]
         dt = (b.time - a.time).total_seconds() if (a.time and b.time) else 0.0
         moving = _is_moving(a, b) and 0 < dt <= MAX_MOVING_GAP
 
         ea, eb = altitudes[i - 1], altitudes[i]
         grade = None
+        window_grades = [g for g in (grades[i - 1], grades[i]) if g is not None]
+        if window_grades:
+            grade = sum(window_grades) / len(window_grades)
         gain = 0.0
-        if ea is not None and eb is not None and d > 0:
-            grade = (eb - ea) / d
-            if eb > ea:
-                gain = eb - ea
+        if ea is not None and eb is not None and eb > ea:
+            gain = eb - ea
 
         speed = step_speed(a, b)
 
@@ -239,13 +252,68 @@ def _zone_index(pace_s_per_km: float) -> Optional[int]:
 # ---------------------------------------------------------------------------
 # GAP (Grade-Adjusted Pace)
 # ---------------------------------------------------------------------------
+def _minetti_cost(grade: float) -> float:
+    """Energy cost of running per metre at a gradient (Minetti et al. 2002).
+
+    J/(kg·m) from ~3.6 on the flat to ~5.97 at +10% and back down through the
+    descents. The polynomial is only fitted for -45%..+45%.
+    """
+    g = max(-GAP_MAX_ABS_GRADE, min(GAP_MAX_ABS_GRADE, grade))
+    return 155.4 * g**5 - 30.4 * g**4 - 43.3 * g**3 + 46.3 * g**2 + 19.5 * g + 3.6
+
+
 def _gap_factor(grade: Optional[float]) -> float:
+    """Flat-equivalent speed multiplier for a gradient.
+
+    A factor above 1 means the effort was harder than the speed suggests, so the
+    grade-adjusted *pace* is faster than the raw pace (pace / factor).
+    """
     if grade is None or grade == 0:
         return 1.0
-    if grade > 0:
-        return 1.0 + GAP_UPHILL_FACTOR * grade
-    g = max(grade, -GAP_MAX_DOWN_GRADE)
-    return 1.0 + GAP_DOWNHILL_FACTOR * g  # g < 0 => factor < 1
+    flat_cost = _minetti_cost(0.0)
+    if flat_cost <= 0:  # pragma: no cover - defensive
+        return 1.0
+    factor = _minetti_cost(grade) / flat_cost
+    return max(GAP_FACTOR_MIN, min(GAP_FACTOR_MAX, factor))
+
+
+def gap_factor(grade: Optional[float]) -> float:
+    """Public alias of the grade correction, for the pacing planner."""
+    return _gap_factor(grade)
+
+
+def _windowed_grades(
+    distances: list[float],
+    altitudes: list[Optional[float]],
+    window: float = GAP_WINDOW_M,
+) -> list[Optional[float]]:
+    """Gradient at each point, measured over at least ``window`` metres.
+
+    A gradient computed between two 3 m samples is dominated by GPS altitude
+    noise. Both pointers advance monotonically, so this stays linear.
+    """
+    count = len(distances)
+    grades: list[Optional[float]] = [None] * count
+    if count < 2:
+        return grades
+    total = distances[-1]
+    half = window / 2.0
+    lo = hi = 0
+    for i in range(count):
+        target_lo = max(0.0, distances[i] - half)
+        target_hi = min(total, distances[i] + half)
+        while lo < count - 1 and distances[lo] < target_lo:
+            lo += 1
+        while hi < count - 1 and distances[hi] < target_hi:
+            hi += 1
+        span = distances[hi] - distances[lo]
+        if span <= 0 or span < window * 0.5:
+            continue
+        start, end = altitudes[lo], altitudes[hi]
+        if start is None or end is None:
+            continue
+        grades[i] = (end - start) / span
+    return grades
 
 
 def compute_gap(points: list[TrackPoint]) -> dict:
@@ -472,3 +540,105 @@ def heatmap_points(activities: list[Activity], stride: int = 2) -> list[list[flo
             if p.lat is not None and p.lon is not None:
                 pts.append([p.lat, p.lon])
     return pts
+
+
+# ---------------------------------------------------------------------------
+# Critical speed and durability
+# ---------------------------------------------------------------------------
+def critical_speed(
+    performances: list[dict],
+) -> Optional[dict]:
+    """Fit the speed-duration model d = CS·t + D' to race performances.
+
+    ``performances`` holds ``{"distance_m", "time_s"}`` entries. A least-squares
+    line through distance against time gives the critical speed (the slope, m/s)
+    and the finite distance reserve D' (the intercept). Unlike VDOT, which is a
+    table built from other athletes, this is fitted to the athlete's own points.
+
+    Returns None when there are fewer than two usable performances or the fit is
+    degenerate.
+    """
+    points = [
+        (float(p["time_s"]), float(p["distance_m"]))
+        for p in performances
+        if p.get("time_s")
+        and p.get("distance_m")
+        and CRITICAL_SPEED_MIN_S <= p["time_s"] <= CRITICAL_SPEED_MAX_S
+    ]
+    if len(points) < 2:
+        return None
+
+    n = len(points)
+    sum_t = sum(t for t, _ in points)
+    sum_d = sum(d for _, d in points)
+    sum_tt = sum(t * t for t, _ in points)
+    sum_td = sum(t * d for t, d in points)
+    denominator = n * sum_tt - sum_t**2
+    if denominator <= 0:
+        return None
+
+    speed = (n * sum_td - sum_t * sum_d) / denominator  # m/s
+    reserve = (sum_d - speed * sum_t) / n  # metres
+    if speed <= 0:
+        return None
+
+    mean_d = sum_d / n
+    ss_tot = sum((d - mean_d) ** 2 for _, d in points)
+    ss_res = sum((d - (speed * t + reserve)) ** 2 for t, d in points)
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else None
+
+    warnings = []
+    if len(points) < 3:
+        warnings.append("only two efforts: one bad day distorts the fit")
+    if r2 is not None and r2 < 0.98:
+        warnings.append("the performances are not consistent with one model")
+
+    return {
+        "speed_ms": round(speed, 3),
+        "pace_s_per_km": round(1000.0 / speed, 1),
+        "d_prime_m": round(reserve),
+        "r2": round(r2, 4) if r2 is not None else None,
+        "points": len(points),
+        "warnings": warnings,
+    }
+
+
+def fade_index(points: list[TrackPoint], min_distance_m: float = 0.0) -> Optional[dict]:
+    """How much the second half of a run slowed down, in grade-adjusted terms.
+
+    Positive fade means the athlete slowed; negative means a negative split.
+    GAP is used so that an uphill second half does not read as fatigue.
+    """
+    steps = _steps(points)
+    total = sum(step["d"] for step in steps if step["dt_moving"])
+    if total <= 0 or total < min_distance_m:
+        return None
+
+    half = total / 2.0
+    cumulative = 0.0
+    first_d = first_t = 0.0
+    second_d = second_t = 0.0
+    for step in steps:
+        if not step["dt_moving"]:
+            continue
+        gap_seconds = step["dt_moving"] / _gap_factor(step["grade"])
+        if cumulative + step["d"] <= half:
+            first_d += step["d"]
+            first_t += gap_seconds
+        else:
+            second_d += step["d"]
+            second_t += gap_seconds
+        cumulative += step["d"]
+
+    if first_d <= 0 or second_d <= 0:
+        return None
+    first_pace = first_t / first_d * 1000.0
+    second_pace = second_t / second_d * 1000.0
+    if first_pace <= 0:
+        return None
+    return {
+        "distance_m": round(total),
+        "first_half_pace_s_per_km": round(first_pace, 1),
+        "second_half_pace_s_per_km": round(second_pace, 1),
+        "fade_pct": round((second_pace - first_pace) / first_pace * 100.0, 2),
+    }

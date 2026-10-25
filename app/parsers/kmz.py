@@ -3,14 +3,26 @@
 A KMZ is a ZIP archive containing a KML file (`doc.kml`). This module extracts
 the GPS trackpoints and metadata of each activity.
 """
+
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from typing import Optional
-import xml.etree.ElementTree as ET
 
-from .model import Activity, Marker, TrackPoint, _children, _child, _text, _local, _normalize_type, _parse_float, _parse_iso
+from .model import (
+    Activity,
+    Marker,
+    TrackPoint,
+    _child,
+    _children,
+    _local,
+    _normalize_type,
+    _parse_float,
+    _parse_iso,
+    _text,
+)
 
 # KML coordinate order is "longitude latitude altitude".
 # Namespaces vary with the KML version.
@@ -54,14 +66,18 @@ def _parse_track(track_elem: ET.Element) -> list[TrackPoint]:
             if len(parts) >= 3:
                 ele = _parse_float(parts[2])
 
-        points.append(TrackPoint(
-            lat=lat, lon=lon, ele=ele,
-            time=_parse_iso(whens[i]),
-            speed=_parse_float(speeds[i]) if i < len(speeds) else None,
-            hr=_parse_float(hrs[i]) if i < len(hrs) else None,
-            cadence=_parse_float(cads[i]) if i < len(cads) else None,
-            ptype=ptypes[i] if i < len(ptypes) else None,
-        ))
+        points.append(
+            TrackPoint(
+                lat=lat,
+                lon=lon,
+                ele=ele,
+                time=_parse_iso(whens[i]),
+                speed=_parse_float(speeds[i]) if i < len(speeds) else None,
+                hr=_parse_float(hrs[i]) if i < len(hrs) else None,
+                cadence=_parse_float(cads[i]) if i < len(cads) else None,
+                ptype=ptypes[i] if i < len(ptypes) else None,
+            )
+        )
     return points
 
 
@@ -87,7 +103,9 @@ def _parse_marker(placemark: ET.Element) -> Optional[Marker]:
     when = _text(_child(ts, "when")) if ts is not None else None
 
     return Marker(
-        lat=lat, lon=lon, ele=ele,
+        lat=lat,
+        lon=lon,
+        ele=ele,
         name=_text(_child(placemark, "name")),
         description=_text(_child(placemark, "description")),
         time=_parse_iso(when),
@@ -114,7 +132,11 @@ def parse_kmz(path: Path) -> Optional[Activity]:
 
     document = root
     if _local(root.tag) != "Document":
-        document = _child(root, "Document") or root
+        # Compare with None explicitly: an Element with no children is falsy,
+        # so `_child(root, "Document") or root` would silently discard a valid
+        # but empty Document element.
+        child = _child(root, "Document")
+        document = root if child is None else child
 
     doc_name = _text(_child(document, "name"))
     trackid = None

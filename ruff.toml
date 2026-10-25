@@ -1,0 +1,26 @@
+# Ruff configuration for open-running-coach.
+#
+# The rule set is deliberately narrow and explicit. A machine-global ruff config
+# (pyupgrade, flake8-blind-except, bandit, pylint refactor…) would flag hundreds
+# of pre-existing lines and drown the signal in any review; widening this set is
+# a deliberate decision, not a side effect of running the tool.
+line-length = 88
+target-version = "py311"
+
+[lint]
+select = [
+    "E4", # imports
+    "E7", # statements
+    "E9", # runtime errors
+    "F",  # pyflakes
+    "I",  # import sorting
+]
+
+[lint.per-file-ignores]
+# Tests intentionally import from private helpers of modules they own the
+# behaviour of, and use long literal fixtures.
+"tests/*" = []
+
+[format]
+quote-style = "double"
+indent-style = "space"

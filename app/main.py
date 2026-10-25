@@ -1140,6 +1140,9 @@ def _coach_tool_context() -> dict:
         "sessions": store.list_sessions(),
         "weights": store.list_weights(),
         "nutrition": store.list_nutrition(),
+        "shoes": _shoes_with_mileage(),
+        "plans": [store.get_plan(row["id"]) for row in store.list_plans()[:10]],
+        "verdicts": store.injury_verdicts(),
     }
 
 

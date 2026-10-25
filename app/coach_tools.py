@@ -21,7 +21,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from . import analysis, coaching
+from . import analysis, coaching, injuries
 from .activity import compute_stats
 from .config import INTENSITY_GROUPS
 from .parsers import Activity
@@ -557,6 +557,158 @@ def compare_periods(context: dict, arguments: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# get_shoes
+# ---------------------------------------------------------------------------
+def get_shoes(context: dict, arguments: dict) -> dict:
+    """Mileage per pair, how close each is to retirement, and how many runs."""
+    include_retired = bool(arguments.get("include_retired"))
+    rows = []
+    for shoe in context.get("shoes") or []:
+        if shoe.get("retired") and not include_retired:
+            continue
+        kilometres = (shoe.get("distance_m") or 0) / 1000.0
+        threshold = shoe.get("threshold_km") or 0
+        rows.append(
+            {
+                "shoe_id": shoe.get("id"),
+                "name": shoe.get("name"),
+                "distance_km": round(kilometres, 1),
+                "runs": shoe.get("activities_count", 0),
+                "threshold_km": threshold,
+                "percent_of_threshold": round(100.0 * kilometres / threshold, 1)
+                if threshold
+                else None,
+                "retired": bool(shoe.get("retired")),
+                "notes": (shoe.get("notes") or "")[:120] or None,
+            }
+        )
+    rows.sort(key=lambda row: row["distance_km"], reverse=True)
+    return {"shoes": rows, "count": len(rows)}
+
+
+# ---------------------------------------------------------------------------
+# get_plan
+# ---------------------------------------------------------------------------
+def _week_payload(week: dict) -> dict:
+    return {
+        "week": week.get("week"),
+        "type": week.get("type"),
+        "volume_min": week.get("volume_min"),
+        "sessions": [
+            {
+                "type": session.get("type"),
+                "duration_min": session.get("duration_min"),
+                "distance_km": session.get("distance_km"),
+                "zones": session.get("zones"),
+            }
+            for session in week.get("sessions") or []
+        ],
+    }
+
+
+def get_plan(context: dict, arguments: dict) -> dict:
+    """The active plan: goal, progress, this week's sessions and the projection."""
+    plan_id = _number(arguments.get("plan_id"))
+    plans = context.get("plans") or []
+    if plan_id is not None:
+        plan = next((item for item in plans if item.get("id") == int(plan_id)), None)
+    else:
+        plan = plans[0] if plans else None
+
+    if plan is None:
+        return {"plan": None, "note": "No training plan has been generated yet"}
+
+    data = plan.get("data") or {}
+    weeks = data.get("weeks_plan") or []
+    start = _parse_date(data.get("start_date"))
+    today = date.today()
+
+    current_week = None
+    weeks_remaining = None
+    if start and weeks:
+        index = (today - start).days // 7
+        current_week = max(1, min(index + 1, len(weeks)))
+        weeks_remaining = max(0, len(weeks) - current_week)
+
+    def week_at(number):
+        if not number:
+            return None
+        match = next((week for week in weeks if week.get("week") == number), None)
+        return _week_payload(match) if match else None
+
+    return {
+        "plan_id": plan.get("id"),
+        "name": plan.get("name"),
+        "goal": plan.get("goal_description"),
+        "weeks": plan.get("weeks"),
+        "start_date": data.get("start_date"),
+        "current_week": current_week,
+        "weeks_remaining": weeks_remaining,
+        "this_week": week_at(current_week),
+        "next_week": week_at((current_week or 0) + 1),
+        "projection": data.get("projection"),
+        "note": (
+            "Running sessions in a plan carry an order (day_offset), not calendar "
+            "dates; only support sessions are dated."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# get_injuries
+# ---------------------------------------------------------------------------
+def get_injuries(context: dict, arguments: dict) -> dict:
+    """Pain episodes with the sessions linked to them and the base rate."""
+    active_only = bool(arguments.get("active_only"))
+    location = (arguments.get("location") or "").strip().lower()
+    today = date.today()
+
+    activities = context.get("activities") or []
+    dates = {
+        activity.id: activity.start_time.date().isoformat()
+        for activity in activities
+        if activity.start_time
+    }
+    episodes = injuries.build_episodes(
+        context.get("feedback") or {}, dates, today=today
+    )
+    linked = injuries.link_sessions_to_episodes(
+        episodes,
+        context.get("sessions") or [],
+        today=today,
+        verdicts=context.get("verdicts") or {},
+    )
+
+    selected = [
+        episode
+        for episode in linked["episodes"]
+        if (not active_only or episode.get("active"))
+        and (not location or episode.get("location") == location)
+    ][:20]
+
+    keys = {
+        (episode["location"], episode["side"], episode["first_date"])
+        for episode in selected
+    }
+    links = [
+        link
+        for link in linked["links"]
+        if (link["location"], link["side"], link["pain_first_date"]) in keys
+    ][:20]
+
+    return {
+        "episodes": selected,
+        "links": links,
+        "summary": linked["summary"],
+        "count": len(selected),
+        "note": (
+            "Correlation, not causation: read the observed rate against the base "
+            "rate before drawing a conclusion."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 TOOL_SCHEMAS = [
@@ -727,6 +879,62 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "get_plan",
+            "description": (
+                "The active training plan: goal, current week, this week's and next "
+                "week's sessions, and the projected chronic load. With no plan_id it "
+                "returns the most recent plan."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "plan_id": {"type": "integer", "minimum": 1},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_shoes",
+            "description": (
+                "Mileage per pair, how close each is to its retirement threshold "
+                "and how many runs are attributed to it."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "include_retired": {"type": "boolean"},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_injuries",
+            "description": (
+                "Pain episodes derived from the post-run check-ins, the sessions "
+                "linked to them, and the base rate that makes the link readable."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "active_only": {"type": "boolean"},
+                    "location": {
+                        "type": "string",
+                        "description": "e.g. knee, achilles, hamstring",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "compare_periods",
             "description": (
                 "Two date ranges side by side: volume, load, pace, intensity "
@@ -761,6 +969,9 @@ _HANDLERS = {
     "get_load_series": get_load_series,
     "get_weights": get_weights,
     "get_nutrition": get_nutrition,
+    "get_plan": get_plan,
+    "get_shoes": get_shoes,
+    "get_injuries": get_injuries,
     "compare_periods": compare_periods,
     "get_activity": get_activity,
     "best_efforts": best_efforts,

@@ -35,6 +35,10 @@ computes your statistics, and displays the route on a map. Drop files into
   runs that felt much harder than the pace implies.
 - 🧾 **Report export**: a one-page Markdown or print/PDF summary for a coach or
   physiotherapist, generated locally.
+- 🤖 **A coach that can look things up**: eleven read-only tools (runs, sessions,
+  load series, weights, nutrition, shoes, plans, injuries, period comparison) so
+  follow-up questions get answers from your records, not from a summary. Bounded
+  and aggregate-only: no coordinates, no full notes.
 - 🏁 **Race-day pacing plan**: import the course GPX and get per-kilometre splits
   at constant *effort* — climbs slower, descents faster — solved so the total
   lands on your target time.

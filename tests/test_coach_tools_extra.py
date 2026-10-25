@@ -270,3 +270,201 @@ def test_a_run_without_conditions_never_matches():
     result = dispatch("search_activities", {"conditions": "hot"}, context)
 
     assert result["matched"] == 0
+
+
+# ---------------------------------------------------------------------------
+# get_shoes
+# ---------------------------------------------------------------------------
+def shoe(shoe_id: int, name: str, km: float, threshold: float = 800, retired=False):
+    return {
+        "id": shoe_id,
+        "name": name,
+        "notes": "",
+        "threshold_km": threshold,
+        "retired": retired,
+        "distance_m": km * 1000,
+        "activities_count": 10,
+    }
+
+
+def test_shoes_are_ordered_by_mileage():
+    context = {"shoes": [shoe(1, "A", 100), shoe(2, "B", 600)]}
+
+    result = dispatch("get_shoes", {}, context)
+
+    assert [item["name"] for item in result["shoes"]] == ["B", "A"]
+
+
+def test_shoes_report_the_share_of_the_threshold():
+    context = {"shoes": [shoe(1, "A", 400, threshold=800)]}
+
+    result = dispatch("get_shoes", {}, context)
+
+    assert result["shoes"][0]["percent_of_threshold"] == 50.0
+
+
+def test_retired_shoes_are_hidden_unless_asked_for():
+    context = {"shoes": [shoe(1, "Live", 100), shoe(2, "Old", 900, retired=True)]}
+
+    assert len(dispatch("get_shoes", {}, context)["shoes"]) == 1
+    assert len(dispatch("get_shoes", {"include_retired": True}, context)["shoes"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# get_plan
+# ---------------------------------------------------------------------------
+def plan_context(start_days_ago: int = 14):
+    start = (TODAY - timedelta(days=start_days_ago)).isoformat()
+    weeks = [
+        {
+            "week": number,
+            "type": "build",
+            "volume_min": 300 + number * 10,
+            "sessions": [
+                {
+                    "type": "easy",
+                    "duration_min": 60,
+                    "distance_km": 10.0,
+                    "zones": "Z2",
+                }
+            ],
+        }
+        for number in range(1, 5)
+    ]
+    return {
+        "plans": [
+            {
+                "id": 7,
+                "name": "Spring half",
+                "goal_description": "Half on 2026-05-01",
+                "weeks": 4,
+                "data": {
+                    "start_date": start,
+                    "weeks_plan": weeks,
+                    "projection": {"start_ctl": 20, "final_ctl": 45, "peak_ctl": 47},
+                },
+            }
+        ]
+    }
+
+
+def test_plan_without_any_plan_says_so():
+    result = dispatch("get_plan", {}, {})
+
+    assert result["plan"] is None
+    assert result["note"]
+
+
+def test_plan_reports_the_current_week():
+    result = dispatch("get_plan", {}, plan_context(start_days_ago=14))
+
+    assert result["plan_id"] == 7
+    assert result["current_week"] == 3
+    assert result["this_week"]["week"] == 3
+    assert result["next_week"]["week"] == 4
+    assert result["weeks_remaining"] == 1
+
+
+def test_plan_current_week_is_clamped_to_the_plan_length():
+    result = dispatch("get_plan", {}, plan_context(start_days_ago=400))
+
+    assert result["current_week"] == 4
+    assert result["weeks_remaining"] == 0
+
+
+def test_plan_passes_the_projection_through():
+    result = dispatch("get_plan", {}, plan_context())
+
+    assert result["projection"]["final_ctl"] == 45
+
+
+def test_plan_can_be_selected_by_id():
+    context = plan_context()
+    context["plans"].insert(
+        0,
+        {
+            "id": 9,
+            "name": "Newer",
+            "goal_description": "",
+            "weeks": 4,
+            "data": {"weeks_plan": [], "start_date": None},
+        },
+    )
+
+    assert dispatch("get_plan", {}, context)["plan_id"] == 9
+    assert dispatch("get_plan", {"plan_id": 7}, context)["plan_id"] == 7
+
+
+# ---------------------------------------------------------------------------
+# get_injuries
+# ---------------------------------------------------------------------------
+def injury_context():
+    run_day = activity_days_ago(1)
+    session_day = (TODAY - timedelta(days=2)).isoformat()
+    return {
+        "activities": [run_day],
+        "feedback": {
+            run_day.id: {
+                "pain": True,
+                "pain_location": "knee",
+                "pain_side": "left",
+                "pain_severity": 6,
+                "pain_trend": "same",
+                "pain_timing": "next_morning",
+            }
+        },
+        "sessions": [
+            {
+                "id": 1,
+                "date": session_day,
+                "kind": "strength",
+                "title": "Lower body",
+                "rpe": 8,
+                "status": "completed",
+                "exercises": [{"name": "Leg press", "sets": 3, "reps": 10}],
+            }
+        ],
+        "verdicts": {},
+    }
+
+
+def test_injuries_return_episodes_with_their_links():
+    result = dispatch("get_injuries", {}, injury_context())
+
+    assert result["count"] == 1
+    assert result["episodes"][0]["location"] == "knee"
+    assert result["links"]
+    assert result["links"][0]["session_title"] == "Lower body"
+    assert "base_rate" in result["summary"]
+
+
+def test_injuries_can_filter_by_location():
+    context = injury_context()
+
+    assert dispatch("get_injuries", {"location": "knee"}, context)["count"] == 1
+    assert dispatch("get_injuries", {"location": "achilles"}, context)["count"] == 0
+
+
+def test_injuries_can_show_only_active_episodes():
+    context = injury_context()
+
+    assert dispatch("get_injuries", {"active_only": True}, context)["count"] == 1
+    assert dispatch("get_injuries", {"active_only": False}, context)["count"] == 1
+
+
+def test_injuries_attach_a_verdict_when_one_exists():
+    context = injury_context()
+    context["verdicts"] = {
+        ("knee", "left", (TODAY - timedelta(days=1)).isoformat()): "plausible"
+    }
+
+    result = dispatch("get_injuries", {}, context)
+
+    assert result["episodes"][0]["verdict"] == "plausible"
+
+
+def test_no_pain_means_no_episodes():
+    result = dispatch("get_injuries", {}, {"activities": [], "feedback": {}})
+
+    assert result["count"] == 0
+    assert result["episodes"] == []

@@ -31,6 +31,21 @@ from .config import (
     FADE_MIN_DISTANCE_M,
     FADE_TREND_RUNS,
     FORM_NEUTRAL_BAND,
+    INSIGHT_EASY_HIGH_PCT,
+    INSIGHT_EASY_MAX_PCT,
+    INSIGHT_EASY_MIN_PCT,
+    INSIGHT_ENERGY_LOW,
+    INSIGHT_HARD_MIN_PCT,
+    INSIGHT_MODERATE_MAX_PCT,
+    INSIGHT_MODERATE_OK_PCT,
+    INSIGHT_NUTRITION_LOGS_MIN,
+    INSIGHT_PAIN_RUNS,
+    INSIGHT_READINESS_LOW,
+    INSIGHT_SUPPLEMENT_DAYS_MIN,
+    INSIGHT_SUPPORT_SESSIONS_MIN,
+    INSIGHT_TRAINING_GAP_DAYS,
+    INSIGHT_TSB_FATIGUE,
+    INSIGHT_TSB_FRESH,
     INTENSITY_GROUPS,
     INTENSITY_ROLLING_DAYS,
     INTENSITY_TARGET,
@@ -53,7 +68,15 @@ from .config import (
     PLAN_MIN_SESSIONS,
     PLAN_PROGRESSION,
     PLAN_RAMP_START,
+    PLAN_RUN_DAYS,
     PLAN_SUPPORT_DEFAULTS,
+    PLAN_TAPER_FACTORS,
+    PLAN_TAPER_WEEKS,
+    PREDICTION_MAX_RATIO,
+    PREDICTION_MIN_DISTANCE_M,
+    PREDICTION_MIN_RATIO,
+    PREDICTION_SEED_MAX_M,
+    PREDICTION_SEED_MIN_M,
     RACE_DISTANCES,
     RACE_WEEKLY_VOLUME_KM,
     RIEGEL_EXPONENT,
@@ -590,11 +613,21 @@ def vo2max_and_predictions(activities: list[Activity]) -> dict:
         vd = _vdot(info["distance_m"], info["time_s"])
         perfs.append({**info, "vdot": round(vd, 1) if vd is not None else None})
 
-    seed = max(
-        (p for p in perfs if p["vdot"] is not None),
-        key=lambda p: p["vdot"],
-        default=None,
-    )
+    # Seed from a performance inside the range where the model is fitted. A
+    # 400 m effort says almost nothing about a marathon, and vice versa.
+    candidates = [
+        p
+        for p in perfs
+        if p["vdot"] is not None
+        and PREDICTION_SEED_MIN_M <= p["distance_m"] <= PREDICTION_SEED_MAX_M
+    ]
+    if not candidates:
+        candidates = [
+            p
+            for p in perfs
+            if p["vdot"] is not None and p["distance_m"] >= PREDICTION_MIN_DISTANCE_M
+        ]
+    seed = max(candidates, key=lambda p: p["vdot"], default=None)
     effective = seed["vdot"] if seed else None
 
     predictions = []
@@ -602,12 +635,19 @@ def vo2max_and_predictions(activities: list[Activity]) -> dict:
         for dist_m, label in RACE_DISTANCES:
             pred = _riegel(seed["distance_m"], seed["time_s"], dist_m)
             actual = best.get(dist_m)
+            ratio = dist_m / seed["distance_m"]
+            reliable = (
+                PREDICTION_MIN_RATIO <= ratio <= PREDICTION_MAX_RATIO
+                and dist_m >= PREDICTION_MIN_DISTANCE_M
+            )
             predictions.append(
                 {
                     "label": label,
                     "distance_m": dist_m,
                     "predicted_time_s": round(pred, 1),
                     "predicted_pace_s_per_km": round(pred / (dist_m / 1000.0), 1),
+                    "reliable": reliable,
+                    "extrapolation": round(ratio, 2),
                     "actual_time_s": round(actual["time_s"], 1) if actual else None,
                     "actual_pace_s_per_km": actual["pace_s_per_km"] if actual else None,
                     "actual_date": actual["date"] if actual else None,
@@ -650,8 +690,17 @@ def _race_weekly_min(goal_distance_m: float) -> float:
     return weekly_km * (WORKOUT_PACES["easy"] / 60.0)
 
 
-def _build_week(week_index: int, volume_min: float, sessions_per_week: int) -> dict:
-    """Split a week's volume (minutes) into sessions following the 80/20 rule."""
+def _build_week(
+    week_index: int,
+    volume_min: float,
+    sessions_per_week: int,
+    week_type: str | None = None,
+) -> dict:
+    """Split a week's volume (minutes) into sessions following the 80/20 rule.
+
+    Each session gets an explicit weekday from PLAN_RUN_DAYS: never the rest day,
+    the long run on Sunday, and the two hard sessions on different days.
+    """
     easy_min = volume_min * PLAN_EASY_FRACTION
     hard_min = volume_min * PLAN_HARD_FRACTION
     long_min = round(volume_min * PLAN_LONG_RUN_FRACTION)
@@ -694,10 +743,20 @@ def _build_week(week_index: int, volume_min: float, sessions_per_week: int) -> d
         _add("recovery", recovery_min)
     _add("long_run", long_min)
 
-    for i, s in enumerate(sessions):
-        s["day_offset"] = i
+    template = {
+        kind: list(days)
+        for kind, days in PLAN_RUN_DAYS.get(sessions_per_week, {}).items()
+    }
+    used: set[int] = set()
+    for session in sessions:
+        days = [day for day in template.get(session["type"], []) if day not in used]
+        day = days[0] if days else next((d for d in range(1, 7) if d not in used), 0)
+        used.add(day)
+        session["day_offset"] = day
+    sessions.sort(key=lambda session: session["day_offset"])
 
-    week_type = "deload" if (week_index + 1) % PLAN_DELOAD_EVERY == 0 else "build"
+    if week_type is None:
+        week_type = "deload" if (week_index + 1) % PLAN_DELOAD_EVERY == 0 else "build"
     return {
         "week": week_index + 1,
         "type": week_type,
@@ -786,6 +845,30 @@ def generate_plan(
         volume = current * PLAN_DELOAD_FACTOR if is_deload else current
         plan_weeks.append(_build_week(i, volume, sessions_per_week))
 
+    # Taper: a race plan steps down over its last weeks instead of ending at
+    # peak volume. A volume-only plan has no race to peak for.
+    if goal_distance_m and len(plan_weeks) > PLAN_TAPER_WEEKS:
+        base_volume = plan_weeks[-PLAN_TAPER_WEEKS - 1]["volume_min"]
+        for offset in range(PLAN_TAPER_WEEKS):
+            index = len(plan_weeks) - PLAN_TAPER_WEEKS + offset
+            factor = PLAN_TAPER_FACTORS[min(offset, len(PLAN_TAPER_FACTORS) - 1)]
+            plan_weeks[index] = _build_week(
+                index,
+                base_volume * factor,
+                sessions_per_week,
+                week_type="taper",
+            )
+
+    # Absolute dates, so planned runs can appear in the Planner. Weeks are
+    # anchored to the Monday on or after the requested start date: day_offset is
+    # a weekday number, not an offset from whatever day the plan happens to start.
+    anchor = base_date + timedelta(days=(7 - base_date.weekday()) % 7)
+    for week in plan_weeks:
+        for session in week["sessions"]:
+            session["date"] = (
+                anchor + timedelta(days=7 * (week["week"] - 1) + session["day_offset"])
+            ).isoformat()
+
     # Support sessions with absolute dates. Strength is dropped in the taper
     # (last) week; mobility and rest stay.
     support_sessions: list[dict] = []
@@ -794,7 +877,7 @@ def generate_plan(
         for default in PLAN_SUPPORT_DEFAULTS:
             if is_taper and default["kind"] == "strength":
                 continue
-            session_date = base_date + timedelta(days=7 * i + default["day_offset"])
+            session_date = anchor + timedelta(days=7 * i + default["day_offset"])
             support_sessions.append(
                 {
                     "date": session_date.isoformat(),
@@ -817,6 +900,7 @@ def generate_plan(
         "sessions_per_week": sessions_per_week,
         "peak_weekly_min": round(peak_weekly_min),
         "start_date": base_date.isoformat(),
+        "week_anchor": anchor.isoformat(),
         "weeks_plan": plan_weeks,
         "support_sessions": support_sessions,
     }
@@ -1417,7 +1501,7 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
     fit = snapshot.get("fitness") or {}
     tsb = fit.get("tsb")
     if tsb is not None:
-        if tsb < -20:
+        if tsb < INSIGHT_TSB_FATIGUE:
             insights.append(
                 {
                     "level": "warn",
@@ -1426,7 +1510,7 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
                     "week before the next hard session.",
                 }
             )
-        elif tsb > 15:
+        elif tsb > INSIGHT_TSB_FRESH:
             insights.append(
                 {
                     "level": "good",
@@ -1442,7 +1526,7 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
         inten.get("hard_pct"),
     )
     if easy is not None:
-        if mod is not None and mod > 25:
+        if mod is not None and mod > INSIGHT_MODERATE_MAX_PCT:
             insights.append(
                 {
                     "level": "warn",
@@ -1451,7 +1535,11 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
                     "to easy (Z1–Z2) or hard (Z4–Z6).",
                 }
             )
-        elif hard is not None and hard < 5 and easy > 85:
+        elif (
+            hard is not None
+            and hard < INSIGHT_HARD_MIN_PCT
+            and easy > INSIGHT_EASY_HIGH_PCT
+        ):
             insights.append(
                 {
                     "level": "info",
@@ -1460,7 +1548,12 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
                     "(tempo or intervals) to stimulate fitness.",
                 }
             )
-        elif mod is not None and hard is not None and 70 <= easy <= 88 and mod <= 15:
+        elif (
+            mod is not None
+            and hard is not None
+            and INSIGHT_EASY_MIN_PCT <= easy <= INSIGHT_EASY_MAX_PCT
+            and mod <= INSIGHT_MODERATE_OK_PCT
+        ):
             insights.append(
                 {
                     "level": "good",
@@ -1495,7 +1588,7 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
             )
 
     days_since = load.get("days_since_last_run")
-    if days_since is not None and days_since >= 7:
+    if days_since is not None and days_since >= INSIGHT_TRAINING_GAP_DAYS:
         insights.append(
             {
                 "level": "info",
@@ -1519,7 +1612,7 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
     # Pain recurrence and prevention work (post-run feedback + support sessions).
     wellness = snapshot.get("wellness") or {}
     pain_runs = wellness.get("pain_runs_10") or 0
-    if pain_runs >= 2:
+    if pain_runs >= INSIGHT_PAIN_RUNS:
         locs = ", ".join(wellness.get("pain_locations_10") or [])
         worsening = wellness.get("pain_worsening_10") or 0
         text = f"Pain was reported in {pain_runs} of your last 10 runs"
@@ -1531,7 +1624,7 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
         insights.append({"level": "warn", "title": "Recurring pain", "text": text})
 
     readiness = wellness.get("readiness_avg_10")
-    if readiness is not None and readiness <= 2.5:
+    if readiness is not None and readiness <= INSIGHT_READINESS_LOW:
         insights.append(
             {
                 "level": "warn",
@@ -1553,7 +1646,7 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
                 "Add 1–2 short sessions to support the painful area.",
             }
         )
-    elif support.get("sessions_7d", 0) >= 3:
+    elif support.get("sessions_7d", 0) >= INSIGHT_SUPPORT_SESSIONS_MIN:
         insights.append(
             {
                 "level": "good",
@@ -1579,7 +1672,7 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
         )
 
     energy = nutrition.get("energy_avg")
-    if energy is not None and energy <= 2.0:
+    if energy is not None and energy <= INSIGHT_ENERGY_LOW:
         insights.append(
             {
                 "level": "info",
@@ -1613,11 +1706,11 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
             }
         )
 
-    if nutrition.get("logs_7d", 0) >= 3:
+    if nutrition.get("logs_7d", 0) >= INSIGHT_NUTRITION_LOGS_MIN:
         rarely = [
             s
             for s in (nutrition.get("supplements") or [])
-            if s.get("taken_days_7d", 0) <= 1
+            if s.get("taken_days_7d", 0) <= INSIGHT_SUPPLEMENT_DAYS_MIN
         ]
         if rarely:
             names = ", ".join(s["name"] for s in rarely)

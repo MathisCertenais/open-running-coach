@@ -159,6 +159,15 @@ INTENSITY_WEEKLY_DAYS = 7
 INTENSITY_ROLLING_DAYS = 28
 
 # VO2max & race prediction.
+# Race prediction. Riegel's exponent was fitted over roughly 1.5-42 km, and
+# extrapolation degrades quickly in both directions: a 400 m effort says little
+# about a marathon, and a marathon says little about a 400 m.
+PREDICTION_SEED_MIN_M = 3000.0
+PREDICTION_SEED_MAX_M = 25000.0
+PREDICTION_MIN_DISTANCE_M = 1500.0
+PREDICTION_MIN_RATIO = 0.5
+PREDICTION_MAX_RATIO = 4.0
+
 # Riegel exponent: T2 = T1 * (D2 / D1)^RIEGEL_EXPONENT.
 RIEGEL_EXPONENT = 1.06
 # Target distances for race-time prediction (meters, label).
@@ -312,6 +321,28 @@ SUPPORT_LOAD_WEIGHTS = {
     "physio": 0.2,
     "other": 0.4,
 }
+# Taper: the last weeks before a race cut volume while keeping some intensity.
+# Factors are relative to the last build week, so the plan steps down rather
+# than simply flattening.
+PLAN_TAPER_WEEKS = 2
+PLAN_TAPER_FACTORS = (0.75, 0.55)
+
+# Which weekday each running session gets (0 = Monday). Day 0 is the rest day
+# and day 6 the long run; the two hard sessions never share a day. An easy run
+# may share a day with mobility or strength — that is normal practice.
+PLAN_RUN_DAYS = {
+    3: {"easy": [1], "tempo": [3], "long_run": [6]},
+    4: {"easy": [1], "tempo": [3], "recovery": [5], "long_run": [6]},
+    5: {"easy": [1], "intervals": [2], "tempo": [4], "recovery": [5], "long_run": [6]},
+    6: {
+        "easy": [1, 3],
+        "intervals": [2],
+        "tempo": [4],
+        "recovery": [5],
+        "long_run": [6],
+    },
+}
+
 # Default support sessions inserted by the plan generator (day_offset 0 = Mon).
 PLAN_SUPPORT_DEFAULTS = (
     {
@@ -448,3 +479,25 @@ CRITICAL_SPEED_MAX_S = 3600.0
 FADE_MIN_DISTANCE_M = 8000.0
 # Runs compared to report a trend.
 FADE_TREND_RUNS = 5
+
+# ---------------------------------------------------------------------------
+# Insight thresholds (rule_based_insights)
+# ---------------------------------------------------------------------------
+# These were inline in the coaching module. Keeping them here means the advice
+# and the panel that explains it read from one source.
+INSIGHT_TSB_FATIGUE = -20.0
+INSIGHT_TSB_FRESH = 15.0
+INSIGHT_MODERATE_MAX_PCT = 25.0
+INSIGHT_MODERATE_OK_PCT = 15.0
+INSIGHT_HARD_MIN_PCT = 5.0
+INSIGHT_EASY_MIN_PCT = 70.0
+INSIGHT_EASY_MAX_PCT = 88.0
+INSIGHT_EASY_HIGH_PCT = 85.0
+INSIGHT_WEEKLY_LOAD_INCREASE = 1.3
+INSIGHT_TRAINING_GAP_DAYS = 7
+INSIGHT_PAIN_RUNS = 2
+INSIGHT_READINESS_LOW = 2.5
+INSIGHT_ENERGY_LOW = 2.0
+INSIGHT_NUTRITION_LOGS_MIN = 3
+INSIGHT_SUPPLEMENT_DAYS_MIN = 1
+INSIGHT_SUPPORT_SESSIONS_MIN = 3

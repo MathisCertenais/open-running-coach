@@ -23,6 +23,7 @@ from app.config import (
     PLAN_MAX_SESSIONS,
     PLAN_MIN_SESSIONS,
     PLAN_PROGRESSION,
+    PLAN_TAPER_FACTORS,
     RIEGEL_EXPONENT,
 )
 from tests.builders import daily_activity, make_activity, make_points, speed_for_pace
@@ -590,3 +591,159 @@ def test_projection_dips_on_deload_weeks():
     assert max(w["weekly_load"] for w in builds) > max(
         w["weekly_load"] for w in deloads
     )
+
+
+# ---------------------------------------------------------------------------
+# Race taper
+# ---------------------------------------------------------------------------
+def race_plan():
+    return coaching.generate_plan(
+        [],
+        goal_distance_m=21097.5,
+        goal_date="2026-06-01",
+        start_date="2026-03-02",
+        sessions_per_week=5,
+    )
+
+
+def test_a_race_plan_tapers():
+    plan = race_plan()
+    weeks = plan["weeks_plan"]
+
+    assert weeks[-1]["type"] == "taper"
+    assert weeks[-2]["type"] == "taper"
+    assert weeks[-1]["volume_min"] < weeks[-2]["volume_min"] < weeks[-3]["volume_min"]
+
+
+def test_the_taper_uses_the_configured_factors():
+    plan = race_plan()
+    weeks = plan["weeks_plan"]
+    base = weeks[-3]["volume_min"]
+
+    assert weeks[-2]["volume_min"] / base == pytest.approx(
+        PLAN_TAPER_FACTORS[0], rel=0.02
+    )
+    assert weeks[-1]["volume_min"] / base == pytest.approx(
+        PLAN_TAPER_FACTORS[1], rel=0.02
+    )
+
+
+def test_a_volume_plan_has_no_taper():
+    plan = make_plan()
+
+    assert all(week["type"] != "taper" for week in plan["weeks_plan"])
+
+
+def test_taper_keeps_the_quality_sessions():
+    plan = race_plan()
+    types = {session["type"] for session in plan["weeks_plan"][-1]["sessions"]}
+
+    assert "intervals" in types or "tempo" in types
+
+
+# ---------------------------------------------------------------------------
+# Planned running days
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("sessions", [3, 4, 5, 6])
+def test_planned_runs_never_land_on_the_rest_day(sessions):
+    plan = make_plan(sessions_per_week=sessions)
+
+    for week in plan["weeks_plan"]:
+        offsets = [session["day_offset"] for session in week["sessions"]]
+        assert 0 not in offsets
+        assert len(offsets) == len(set(offsets))
+        assert all(session.get("date") for session in week["sessions"])
+
+
+def test_the_long_run_is_on_sunday():
+    plan = make_plan(sessions_per_week=5)
+
+    for week in plan["weeks_plan"]:
+        long_run = next(s for s in week["sessions"] if s["type"] == "long_run")
+        assert long_run["day_offset"] == 6
+
+
+def test_hard_sessions_are_on_different_days():
+    plan = make_plan(sessions_per_week=6)
+
+    for week in plan["weeks_plan"]:
+        days = {s["type"]: s["day_offset"] for s in week["sessions"]}
+        assert days["tempo"] != days["intervals"]
+
+
+def test_planned_dates_advance_one_week():
+    plan = make_plan(sessions_per_week=4)
+    first = plan["weeks_plan"][0]["sessions"][0]["date"]
+    second = plan["weeks_plan"][1]["sessions"][0]["date"]
+
+    delta = date.fromisoformat(second) - date.fromisoformat(first)
+    assert delta.days == 7
+
+
+def test_planned_runs_start_at_the_plan_start_date():
+    plan = make_plan(sessions_per_week=4)
+    first_day = min(s["date"] for s in plan["weeks_plan"][0]["sessions"])
+
+    assert first_day >= plan["start_date"]
+    assert (
+        date.fromisoformat(first_day) - date.fromisoformat(plan["start_date"])
+    ).days <= 6
+
+
+# ---------------------------------------------------------------------------
+# Race prediction validity
+# ---------------------------------------------------------------------------
+def test_the_seed_prefers_a_performance_in_the_fitted_range():
+    short = make_activity(
+        make_points([(120, speed_for_pace(180))]), activity_id="short"
+    )
+    proper = make_activity(
+        make_points([(1250, speed_for_pace(240))]), activity_id="proper"
+    )
+
+    result = coaching.vo2max_and_predictions([short, proper])
+
+    assert result["seed"] is not None
+    assert result["seed"]["distance_m"] >= 5000
+
+
+def test_extrapolated_predictions_are_flagged():
+    activity = make_activity(
+        make_points([(1250, speed_for_pace(240))]), activity_id="five-k"
+    )
+
+    result = coaching.vo2max_and_predictions([activity])
+    by_label = {p["label"]: p for p in result["predictions"]}
+
+    ten_k = next(p for label, p in by_label.items() if "10" in label)
+    marathon = next(p for label, p in by_label.items() if "arathon" in label)
+    assert ten_k["reliable"] is True
+    assert marathon["reliable"] is False
+    assert marathon["extrapolation"] > 4
+
+
+def test_short_predictions_are_flagged_too():
+    activity = make_activity(
+        make_points([(1250, speed_for_pace(240))]), activity_id="five-k"
+    )
+
+    result = coaching.vo2max_and_predictions([activity])
+    four_hundred = next(p for p in result["predictions"] if p["distance_m"] == 400)
+
+    assert four_hundred["reliable"] is False
+
+
+def test_plan_weeks_are_anchored_to_monday():
+    # A Sunday start must not shift the weekday semantics: day 0 stays Monday.
+    plan = coaching.generate_plan(
+        [], weekly_target_s=36000, start_date="2026-10-25", sessions_per_week=4
+    )
+    anchor = date.fromisoformat(plan["week_anchor"])
+
+    assert anchor.weekday() == 0
+    long_run = next(
+        s for s in plan["weeks_plan"][0]["sessions"] if s["type"] == "long_run"
+    )
+    assert date.fromisoformat(long_run["date"]).weekday() == 6
+    for support in plan["support_sessions"]:
+        assert support["date"] >= plan["week_anchor"]

@@ -1054,6 +1054,44 @@ def api_coaching_vo2max() -> dict:
     }
 
 
+@app.get("/api/coaching/planned-runs")
+def api_planned_runs(
+    date_from: Optional[str] = None, date_to: Optional[str] = None
+) -> dict:
+    """The most recent plan's running sessions, with their calendar dates.
+
+    Kept out of /api/sessions: a planned run is not a support session, and the
+    Planner needs it as a distinct kind of entry.
+    """
+    plans = store.list_plans()
+    if not plans:
+        return {"plan_id": None, "runs": []}
+    plan = store.get_plan(plans[0]["id"]) or {}
+    data = plan.get("data") or {}
+    runs = []
+    for week in data.get("weeks_plan") or []:
+        for session in week.get("sessions") or []:
+            day = session.get("date")
+            if not day:
+                continue
+            if date_from and day < date_from:
+                continue
+            if date_to and day > date_to:
+                continue
+            runs.append(
+                {
+                    "date": day,
+                    "type": session.get("type"),
+                    "duration_min": session.get("duration_min"),
+                    "distance_km": session.get("distance_km"),
+                    "zones": session.get("zones"),
+                    "week": week.get("week"),
+                }
+            )
+    runs.sort(key=lambda run: run["date"])
+    return {"plan_id": plan.get("id"), "runs": runs}
+
+
 @app.get("/api/coaching/plans")
 def api_coaching_plans() -> dict:
     return {"plans": store.list_plans()}

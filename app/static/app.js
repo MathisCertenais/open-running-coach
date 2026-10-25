@@ -1060,9 +1060,12 @@ function renderVo2max(data) {
     const actual = p.actual_time_s != null
       ? `${fmtDuration(p.actual_time_s)} <span class="muted">(${fmtDate(p.actual_date)})</span>`
       : '<span class="muted">no race logged</span>';
+    const extrapolated = p.reliable === false
+      ? ` <span class="muted" title="Extrapolated ${p.extrapolation}× from your seed effort — treat as indicative">~</span>`
+      : "";
     return `<tr>
       <td>${esc(p.label)}</td>
-      <td class="num">${fmtDuration(p.predicted_time_s)}</td>
+      <td class="num">${extrapolated}${fmtDuration(p.predicted_time_s)}</td>
       <td class="num">${fmtPace(p.predicted_pace_s_per_km)}</td>
       <td class="num">${actual}</td>
     </tr>`;
@@ -2617,12 +2620,29 @@ function shiftPlannerWeek(days) {
 
 async function loadPlannerSessions() {
   try {
-    const data = await fetch("/api/sessions").then((r) => r.json());
-    state.plannerSessions = data.sessions || [];
+    const [sessions, planned] = await Promise.all([
+      fetch("/api/sessions").then((r) => r.json()),
+      fetch("/api/coaching/planned-runs").then((r) => r.json()).catch(() => ({})),
+    ]);
+    state.plannerSessions = sessions.sessions || [];
+    state.plannedRuns = planned.runs || [];
   } catch (err) {
     console.error(err);
     state.plannerSessions = [];
+    state.plannedRuns = [];
   }
+}
+
+function plannedRunHtml(run) {
+  const meta = WORKOUT_TYPE_META[run.type] || { label: run.type, icon: "🏃" };
+  const details = [];
+  if (run.duration_min) details.push(`${run.duration_min} min`);
+  if (run.distance_km) details.push(`${run.distance_km} km`);
+  if (run.zones) details.push(run.zones);
+  return `<div class="planner-run planned" title="Planned in ${esc(String(meta.label))} — week ${run.week} of your plan">
+    <span>${meta.icon}</span>
+    <span class="planner-run-main">${esc(meta.label)} · ${esc(details.join(" · "))}</span>
+  </div>`;
 }
 
 function sessionCardHtml(s) {
@@ -2671,16 +2691,18 @@ function renderPlanner() {
   grid.innerHTML = days.map((day) => {
     const runs = activitiesByDate[day.iso] || [];
     const sessions = state.plannerSessions.filter((s) => s.date === day.iso);
+    const planned = (state.plannedRuns || []).filter((r) => r.date === day.iso);
+    const plannedHtml = planned.map(plannedRunHtml).join("");
     const runsHtml = runs.map((a) => `
       <div class="planner-run" data-id="${esc(a.id)}">
         <span>🏃</span>
         <span class="planner-run-main">${esc(fmtDistance(a.stats.distance_m))} · ${esc(fmtPace(a.stats.avg_pace_s_per_km))}</span>
       </div>`).join("");
     const sessionsHtml = sessions.map(sessionCardHtml).join("");
-    const empty = !runs.length && !sessions.length ? '<div class="planner-empty">Rest / no entry</div>' : "";
+    const empty = !runs.length && !sessions.length && !planned.length ? '<div class="planner-empty">Rest / no entry</div>' : "";
     return `<div class="planner-day ${day.isToday ? "today" : ""}">
       <div class="planner-day-head">${esc(day.date.toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short" }))}</div>
-      ${runsHtml}${sessionsHtml}${empty}
+      ${runsHtml}${sessionsHtml}${plannedHtml}${empty}
     </div>`;
   }).join("");
 

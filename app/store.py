@@ -20,9 +20,7 @@ class Store:
 
     def _ensure_column(self, table: str, column: str, ddl: str) -> None:
         """Add a column to an existing table (idempotent migration)."""
-        existing = {
-            row[1] for row in self._conn.execute(f"PRAGMA table_info({table})")
-        }
+        existing = {row[1] for row in self._conn.execute(f"PRAGMA table_info({table})")}
         if column not in existing:
             self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 

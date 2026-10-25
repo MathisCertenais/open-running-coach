@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from math import exp
 from typing import Optional
 
+from . import injuries
 from .activity import compute_stats
 from .analysis import compute_best_efforts, compute_pace_zones
 from .config import (
@@ -1055,6 +1056,67 @@ def build_snapshot(
             }
         )
 
+    # --- new analyses: injury links, divergence, conditions -----------------
+    checked_at = date.today()
+    activity_dates = {
+        a.id: a.start_time.astimezone(timezone.utc).date().isoformat()
+        for a in activities
+        if a.start_time
+    }
+    episode_list = injuries.build_episodes(
+        feedback_map, activity_dates, today=checked_at
+    )
+    linked = injuries.link_sessions_to_episodes(
+        episode_list, sessions, today=checked_at
+    )
+    injury_summary = {
+        "episodes": [
+            {
+                "location": e["location"],
+                "side": e["side"],
+                "first_date": e["first_date"],
+                "last_date": e["last_date"],
+                "reports": e["reports"],
+                "max_severity": e["max_severity"],
+                "active": e["active"],
+                "verdict": e.get("verdict"),
+            }
+            for e in episode_list
+        ],
+        "links": [
+            {
+                "location": link["location"],
+                "pain_first_date": link["pain_first_date"],
+                "session_date": link["session_date"],
+                "session_title": link["session_title"],
+                "session_rpe": link["session_rpe"],
+                "hours_before": link["hours_before"],
+                "explanation": link["explanation"],
+            }
+            for link in linked["links"]
+        ],
+        "observed_rate": linked["summary"].get("observed_rate"),
+        "base_rate": linked["summary"].get("base_rate"),
+        "reading": linked["summary"].get("reading"),
+    }
+
+    conditions: dict[str, int] = {}
+    for fb in feedback_map.values():
+        label = fb.get("conditions")
+        if label:
+            conditions[label] = conditions.get(label, 0) + 1
+
+    sessions_detail = [
+        {
+            "date": s.get("date"),
+            "kind": s.get("kind"),
+            "title": s.get("title"),
+            "rpe": s.get("rpe"),
+            "exercises": [e.get("name") for e in s.get("exercises") or []],
+        }
+        for s in sorted(sessions, key=lambda x: x.get("date") or "", reverse=True)[:5]
+    ]
+
     snapshot = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "athlete": athlete,
@@ -1065,6 +1127,19 @@ def build_snapshot(
             "atl": cur_fit.get("atl"),
             "tsb": cur_fit.get("tsb"),
             "form": cur_fit.get("form"),
+            "form_pct_of_ctl": cur_fit.get("tsb_pct"),
+            "calibrating": cur_fit.get("calibrating"),
+        },
+        "calibration": {
+            "days_required": CTL_CALIBRATION_DAYS,
+            "in_calibration": cur_fit.get("calibrating"),
+            "meaning": "both averages start at zero; no form band is meaningful yet",
+        },
+        "load_change": {
+            "ratio": acwr.get("acwr"),
+            "band": acwr.get("band"),
+            "gap_days": acwr.get("gap_days"),
+            "meaning": "describes how fast load is changing; it is not a risk score",
         },
         "load": {
             "last_7d": last_7d,
@@ -1084,7 +1159,12 @@ def build_snapshot(
             "moderate_pct": inten["groups"]["moderate"]["time_pct"],
             "hard_pct": inten["groups"]["hard"]["time_pct"],
             "target_pct": {"easy": 80, "moderate": 10, "hard": 10},
+            "basis": "grade-adjusted pace",
         },
+        "divergence": load_divergence(activities, rpe_map, limit=3),
+        "injuries": injury_summary,
+        "conditions": conditions,
+        "sessions_detail": sessions_detail,
         "wellness": wellness,
         "support": support,
         "nutrition": nutrition_summary,
@@ -1116,11 +1196,48 @@ def _key_facts(snapshot: dict) -> list[str]:
     """Unambiguous, pre-formatted facts to reduce LLM misreadings."""
     facts: list[str] = []
 
+    load_change = snapshot.get("load_change") or {}
+    if load_change.get("gap_days") is not None and load_change["gap_days"] > 7:
+        facts.append(
+            f"Load-change ratio is withheld: no activity for "
+            f"{load_change['gap_days']} days, so the comparison is meaningless."
+        )
+    if snapshot.get("calibration", {}).get("in_calibration"):
+        facts.append(
+            "CTL/ATL are still calibrating (fewer than "
+            f"{snapshot['calibration']['days_required']} days of history): do not "
+            "describe form as fresh or fatigued."
+        )
+
+    injury = snapshot.get("injuries") or {}
+    if injury.get("episodes"):
+        active = [e for e in injury["episodes"] if e.get("active")]
+        facts.append(
+            f"{len(injury['episodes'])} pain episode(s), {len(active)} active; "
+            f"{len(injury.get('links') or [])} link(s) to a hard session."
+        )
+        if injury.get("base_rate") is not None:
+            facts.append(
+                f"Injury links: observed in {injury.get('observed_rate')} of lower-limb "
+                f"episodes vs a base rate of {injury['base_rate']} of all days "
+                f"({injury.get('reading')}). This is a correlation, not a cause."
+            )
+
+    for item in snapshot.get("divergence") or []:
+        facts.append(
+            f"{item['date']} felt {item['direction']} than the pace suggests: "
+            f"RPE {item['rpe']} is {item['ratio']}x the pace-based load."
+        )
+
+    if snapshot.get("conditions"):
+        summary = ", ".join(f"{k} x{v}" for k, v in snapshot["conditions"].items())
+        facts.append(f"Recorded conditions: {summary}.")
+
     acwr = snapshot.get("acwr") or {}
     if acwr.get("ratio") is not None:
         facts.append(
-            f"ACWR ratio {acwr['ratio']} ({acwr.get('band')}); "
-            f"acute 7-day load {acwr.get('acute_load_7d')}, "
+            f"Load change {acwr['ratio']} ({acwr.get('band')}); "
+            f"7-day load {acwr.get('acute_load_7d')}, "
             f"chronic 28-day load {acwr.get('chronic_load_28d')}"
         )
 
@@ -1175,45 +1292,55 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
     """
     insights: list[dict] = []
 
-    acwr = snapshot.get("acwr") or {}
-    val, band = acwr.get("ratio"), acwr.get("band")
+    load_change = snapshot.get("load_change") or {}
+    val, band = load_change.get("ratio"), load_change.get("band")
     if val is not None:
-        if band == "high_risk":
-            insights.append(
-                {
-                    "level": "danger",
-                    "title": "Load spike — high injury-risk band",
-                    "text": f"Your ACWR is {val:.2f} (above 1.5). Keep the next 7 days easy and "
-                    "avoid adding volume; a sharp load spike is the strongest injury predictor.",
-                }
-            )
-        elif band == "caution":
+        if band == "sharp_increase":
             insights.append(
                 {
                     "level": "warn",
-                    "title": "Load rising fast",
-                    "text": f"Your ACWR is {val:.2f} (1.3–1.5). Hold this week's volume steady "
-                    "and prioritise recovery.",
+                    "title": "Load rose sharply",
+                    "text": f"Your 7-day load is {val:.2f}x the previous 28 days. That is a "
+                    "steep change; holding this week steady is usually more productive than "
+                    "adding more. This describes the change, not an injury risk.",
                 }
             )
-        elif band == "undertraining":
+        elif band == "ramping_up":
             insights.append(
                 {
                     "level": "info",
-                    "title": "Undertraining",
-                    "text": f"Your ACWR is {val:.2f} (below 0.8). Recent load is well under your "
-                    "baseline — rebuild gradually, not in one big week.",
+                    "title": "Load ramping up",
+                    "text": f"Your 7-day load is {val:.2f}x the previous 28 days. Reasonable "
+                    "during a build — keep increases under ~10% per week.",
                 }
             )
-        elif band == "sweet_spot":
+        elif band == "ramping_down":
+            insights.append(
+                {
+                    "level": "info",
+                    "title": "Load ramping down",
+                    "text": f"Your 7-day load is {val:.2f}x the previous 28 days. Fine after a "
+                    "race or a deload; rebuild gradually rather than in one big week.",
+                }
+            )
+        elif band == "steady":
             insights.append(
                 {
                     "level": "good",
-                    "title": "Load in the sweet spot",
-                    "text": f"Your ACWR is {val:.2f} (0.8–1.3) — a safe progression zone. Keep "
-                    "increases under ~10% per week.",
+                    "title": "Load steady",
+                    "text": f"Your 7-day load is {val:.2f}x the previous 28 days — a stable "
+                    "progression.",
                 }
             )
+    if band == "after_gap":
+        insights.append(
+            {
+                "level": "info",
+                "title": "Back after a break",
+                "text": "More than a week without training, so the load ratio is withheld. "
+                "Restart with easy volume before resuming quality work.",
+            }
+        )
 
     fit = snapshot.get("fitness") or {}
     tsb = fit.get("tsb")
@@ -1394,11 +1521,14 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
     if steps_avg is not None and steps_avg < STEPS_SEDENTARY_WARN:
         band = (snapshot.get("acwr") or {}).get("band")
         extra = ""
-        if band in ("caution", "high_risk"):
+        if band in ("ramping_up", "sharp_increase"):
             extra = " Combined with your rising training load, this raises injury risk."
         level = (
             "warn"
-            if (steps_avg < STEPS_SEDENTARY_HIGH or band in ("caution", "high_risk"))
+            if (
+                steps_avg < STEPS_SEDENTARY_HIGH
+                or band in ("ramping_up", "sharp_increase")
+            )
             else "info"
         )
         insights.append(

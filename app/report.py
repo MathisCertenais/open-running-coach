@@ -10,6 +10,7 @@ Two renderings of the same data:
 
 Both are one-way: the athlete decides what to export and to whom (ADR-0007).
 """
+
 from __future__ import annotations
 
 from datetime import date

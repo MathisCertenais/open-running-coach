@@ -1087,9 +1087,7 @@ def api_coaching_generate_plan(payload: PlanPayload) -> dict:
         start_date=payload.start_date,
     )
     current = coaching.fitness_series(activities, rpe_map)["current"]
-    data["projection"] = coaching.project_plan(
-        data, current["ctl"] if current else 0.0
-    )
+    data["projection"] = coaching.project_plan(data, current["ctl"] if current else 0.0)
     plan_id = store.add_plan(
         data["name"], data["goal_description"], data["weeks"], data
     )

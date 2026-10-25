@@ -26,7 +26,15 @@ computes your statistics, and displays the route on a map. Drop files into
 - 👟 **Shoe automation**: pick a default pair and have new runs assigned to it
   automatically.
 - 🩹 **Injury watch**: episodes derived from the pain already reported in each
-  run's check-in — nothing to record twice.
+  run's check-in — nothing to record twice — with the base rate, so a link is
+  shown against chance rather than in isolation.
+- 🧭 **Load change**: last 7 days against the 28 before them, described as
+  *ramping down / steady / ramping up / sharp increase*. Not a risk score, and
+  withheld after a break.
+- 🌡️ **Conditions and RPE divergence**: record heat and humidity, and see the
+  runs that felt much harder than the pace implies.
+- 🧾 **Report export**: a one-page Markdown or print/PDF summary for a coach or
+  physiotherapist, generated locally.
 - 🌙 **Dark theme**: follows the operating system, one click to override; the
   choice is remembered.
 - 🔄 Automatic re-read of the `data/` folder (↻ button or reload)

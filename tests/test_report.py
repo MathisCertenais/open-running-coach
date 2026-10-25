@@ -1,4 +1,5 @@
 """Tests for the coach/physio export (Markdown and print HTML)."""
+
 from __future__ import annotations
 
 from app import report

@@ -1,5 +1,8 @@
 # Coach Running 🏃
 
+[![CI](https://github.com/MathisCertenais/open-running-coach/actions/workflows/ci.yml/badge.svg)](https://github.com/MathisCertenais/open-running-coach/actions/workflows/ci.yml)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+
 Local running-tracking dashboard, inspired by Strava. It reads your activity
 files in **KMZ** (OpenTracks), **GPX** or **TCX** format (e.g. Strava exports),
 computes your statistics, and displays the route on a map. Drop files into
@@ -264,6 +267,48 @@ Sample files are included so you can see the result immediately:
 `examples/workout/wger-sample.json` — copy them into the matching `data/`
 folder to try them. Sessions appear in the **Planner**. Re-importing a changed
 file replaces the sessions it previously created.
+
+## Development
+
+```bash
+.venv/bin/pip install -r requirements-dev.txt   # pytest + ruff
+.venv/bin/python -m pytest                      # test suite
+.venv/bin/ruff check .                          # lint
+.venv/bin/ruff format --check .                 # formatting
+```
+
+The suite covers the coaching models (load, CTL/ATL/TSB, ACWR, intensity, VDOT,
+Riegel, plans), the analysis layer (zones, GAP, splits, GPS robustness, matched
+runs), every parser and every connector.
+
+**No real activity data is used.** All fixtures are generated from
+`tests/fixtures/`:
+
+| Fixture | Reproduces |
+| --- | --- |
+| `make_gpx.py` | Strava export: numeric `<type>`, no speed sensor, nested HR extension |
+| `make_tcx.py` | Garmin export: one `<Lap>` per lap, `HeartRateBpm`, `TPX/Speed` |
+| `make_kmz.py` | OpenTracks export: `<MultiTrack>`, parallel arrays, `IDLE` samples, no HR |
+| `make_nutrition.py` | Waistline CSV (French headers, decimal comma) and JSON: meals, steps, weight |
+| `make_workout.py` | wger JSON and generic CSV: sessions with exercise summaries |
+| `track.py` | One canonical run rendered into all three activity formats |
+
+`test_formats.py` parses the *same run* from GPX, TCX and KMZ and asserts that
+distance, moving time, pace zones and GAP agree, so a parser cannot drift away
+from the shared `Activity` model.
+
+To try the app on synthetic data in a fresh clone:
+
+```bash
+.venv/bin/python examples/make_demo_data.py
+```
+
+It writes 5 activities across the three formats plus nutrition, weight, steps
+and workouts into `data/`. Delete those files when you switch to real data.
+
+CI (`.github/workflows/ci.yml`) runs three jobs: lint and format, the suite on
+Python 3.11–3.14, and a smoke job that generates the demo dataset, boots
+uvicorn and probes every API endpoint.
 
 ## Documentation
 

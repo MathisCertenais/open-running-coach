@@ -1,61 +1,43 @@
-"""Generate synthetic OpenTracks KMZ files for parser tests.
+"""KMZ writer shaped like an OpenTracks export.
 
-The builder deliberately reproduces the quirks of real exports:
+OpenTracks-specific quirks reproduced here on purpose:
 
-- several ``<Track>`` elements, i.e. several manual segments (laps);
-- a ``trackpoint_type`` array containing ``IDLE`` and ``SEGMENT_START_MANUAL``;
+- a ``<MultiTrack>`` holding one ``<Track>`` per manual segment;
+- parallel ``<when>`` and ``<coord>`` arrays plus ``SimpleArrayData`` arrays for
+  speed and ``trackpoint_type``;
 - **no** ``heartrate`` or ``cadence`` array, which is the current real-world
-  situation even though the schema declares them.
+  situation even though the schema declares both.
 """
 
 from __future__ import annotations
 
 import zipfile
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-START = datetime(2026, 3, 1, 8, 0, tzinfo=timezone.utc)
-LAT0, LON0 = 48.8566, 2.3522
+from .track import Run
 
-# One lap, then a pause, then a second lap: this is what an interval session
-# looks like when exported by OpenTracks.
-LAPS = [
-    {"points": 6, "speed": 2.5, "type": "SEGMENT_START_MANUAL"},
-    {"points": 4, "speed": 4.0, "type": "TRACKPOINT"},
-]
-
-DOC_NAME = "Synthetic run"
-DESCRIPTION = "Two laps, no heart rate"
-TRACK_ID = "synthetic-1"
+DOC_NAME = "Synthetic OpenTracks run"
+DESCRIPTION = "Three laps, no heart rate"
+TRACK_ID = "synthetic-opentracks-1"
 
 
-def _iso(dt: datetime) -> str:
-    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _track_xml(lap_index: int) -> str:
-    lap = LAPS[lap_index]
-    n = lap["points"]
-    speed = lap["speed"]
-    t = START + timedelta(minutes=10 * lap_index)
-    # ~2 m per second eastwards, so the implied speed agrees with the sensor.
-    lon = LON0 + lap_index * 0.001
-
+def _track_xml(segment, lap_index: int, mark_idle: bool) -> str:
     whens: list[str] = []
     coords: list[str] = []
     speeds: list[str] = []
     types: list[str] = []
 
-    for i in range(n):
-        whens.append(f"<when>{_iso(t)}</when>")
-        coords.append(f"<coord>{lon:.7f} {LAT0:.7f} 35.0</coord>")
-        speeds.append(f"<value>{speed:.2f}</value>")
-        ptype = lap["type"] if i == 0 else "TRACKPOINT"
-        if i == n - 1 and lap_index == 0:
+    for i, s in enumerate(segment):
+        whens.append(f"<when>{s.t.strftime('%Y-%m-%dT%H:%M:%SZ')}</when>")
+        coords.append(f"<coord>{s.lon:.7f} {s.lat:.7f} {s.ele:.1f}</coord>")
+        speeds.append(f"<value>{s.speed:.3f}</value>")
+        ptype = "TRACKPOINT"
+        if i == 0:
+            ptype = "SEGMENT_START_MANUAL"
+        elif mark_idle and i == len(segment) - 1 and lap_index == 0:
+            # An isolated IDLE sample at a traffic light.
             ptype = "IDLE"
         types.append(f"<value>{ptype}</value>")
-        t += timedelta(seconds=1)
-        lon += speed / (111_320.0 * 0.657)
 
     return (
         "<Track>"
@@ -63,15 +45,18 @@ def _track_xml(lap_index: int) -> str:
         + "".join(coords)
         + '<ExtendedData><SchemaData schemaUrl="#schema">'
         + f'<SimpleArrayData name="speed">{"".join(speeds)}</SimpleArrayData>'
-        + f'<SimpleArrayData name="trackpoint_type">{"".join(types)}</SimpleArrayData>'
+        + f'<SimpleArrayData name="trackpoint_type">{"".join(types)}'
+        + "</SimpleArrayData>"
         + "</SchemaData></ExtendedData>"
         + "</Track>"
     )
 
 
-def kml_text() -> str:
+def kml_text(run: Run, mark_idle: bool = True) -> str:
     """Return the KML document as a string."""
-    tracks = "".join(_track_xml(i) for i in range(len(LAPS)))
+    tracks = "".join(
+        _track_xml(seg, i, mark_idle) for i, seg in enumerate(run.segments)
+    )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<kml xmlns="http://www.opengis.net/kml/2.3" '
@@ -90,16 +75,16 @@ def kml_text() -> str:
     )
 
 
-def write_synthetic_kmz(path: Path) -> Path:
-    """Write a synthetic OpenTracks KMZ to ``path`` and return it."""
+def write_kmz(path: Path, run: Run, mark_idle: bool = True) -> Path:
+    """Write an OpenTracks-shaped KMZ to ``path`` and return it."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("doc.kml", kml_text())
+        zf.writestr("doc.kml", kml_text(run, mark_idle))
     return path
 
 
-if __name__ == "__main__":  # pragma: no cover - manual fixture generation
-    import sys
+def write_synthetic_kmz(path: Path) -> Path:
+    """Convenience wrapper: the canonical run as an OpenTracks KMZ."""
+    from .track import build_run
 
-    target = Path(sys.argv[1] if len(sys.argv) > 1 else "synthetic.kmz")
-    print(write_synthetic_kmz(target))
+    return write_kmz(path, build_run(with_sensors=False))

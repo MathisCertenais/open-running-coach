@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint and format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+      - name: Install dev tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: ruff check
+        run: ruff check .
+      - name: ruff format --check
+        run: ruff format --check .
+
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install runtime and dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run the suite
+        run: python -m pytest -q
+
+  smoke:
+    name: Boot the app on generated data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Generate demo activities, nutrition, weight and workouts
+        run: python examples/make_demo_data.py
+      - name: Boot the server and probe every view
+        run: |
+          set -euo pipefail
+          uvicorn app.main:app --host 127.0.0.1 --port 8099 --log-level warning &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+
+          ready=""
+          for _ in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8099/api/summary > /dev/null 2>&1; then
+              ready="yes"
+              break
+            fi
+            sleep 1
+          done
+          if [ -z "$ready" ]; then
+            echo "::error::server did not become ready"
+            exit 1
+          fi
+
+          for path in \
+            / \
+            /api/summary \
+            /api/activities \
+            /api/heatmap \
+            /api/best-efforts \
+            /api/monthly \
+            /api/coaching/load \
+            /api/coaching/fitness \
+            /api/coaching/acwr \
+            /api/coaching/intensity \
+            /api/coaching/vo2max \
+            /api/nutrition \
+            /api/sessions \
+            /api/weights
+          do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8099${path}")
+            echo "${path} -> ${code}"
+            if [ "$code" != "200" ]; then
+              echo "::error::${path} returned ${code}"
+              exit 1
+            fi
+          done
+
+          activities=$(curl -s http://127.0.0.1:8099/api/activities | python -c "import json,sys; print(len(json.load(sys.stdin).get('activities', [])))")
+          echo "activities imported: ${activities}"
+          if [ "${activities}" -lt 5 ]; then
+            echo "::error::expected the generated activities to be imported"
+            exit 1
+          fi

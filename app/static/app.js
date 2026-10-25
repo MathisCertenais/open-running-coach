@@ -2892,6 +2892,49 @@ function initImport() {
   });
 }
 
+/* --------------------- Automatic import polling -------------------- */
+
+let dataVersion = null;
+let toastTimer = null;
+
+function showDataToast(text) {
+  const el = $("#data-toast");
+  if (!el) return;
+  el.textContent = text;
+  el.classList.remove("hidden");
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add("hidden"), 6000);
+}
+
+async function pollDataVersion() {
+  // Nothing to do while the tab is in the background: the server watcher has
+  // already imported the files, the UI only needs to catch up on return.
+  if (document.hidden) return;
+  try {
+    const res = await fetch("/api/data-version");
+    if (!res.ok) return;
+    const payload = await res.json();
+    if (dataVersion === null) {
+      dataVersion = payload.version;
+      return;
+    }
+    if (payload.version === dataVersion) return;
+    dataVersion = payload.version;
+    await reloadData();
+    showDataToast("New data imported");
+  } catch (err) {
+    /* offline or server restarting: try again on the next tick */
+  }
+}
+
+function initDataWatcher() {
+  pollDataVersion();
+  setInterval(pollDataVersion, 10000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) pollDataVersion();
+  });
+}
+
 /* --------------------------- Accessibility ------------------------ */
 
 function initTabs(tablistId, panelId) {
@@ -3010,6 +3053,7 @@ function initTheme() {
 
 initTheme();
 initImport();
+initDataWatcher();
 initTabs("analysis-tabs", "analysis-tab-body");
 initTabs("coaching-tabs", "coaching-body");
 $("#save-note-btn").addEventListener("click", saveNote);

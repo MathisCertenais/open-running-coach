@@ -393,3 +393,11 @@ INJURY_ACTIVE_DAYS = 14
 INJURY_LOOKBACK_HOURS = 48
 # Only sessions at least this hard are considered (1-10 RPE).
 INJURY_SESSION_MIN_RPE = 7
+
+# ---------------------------------------------------------------------------
+# Automatic import
+# ---------------------------------------------------------------------------
+# How often the server looks for new files in data/. Set to 0 to disable the
+# watcher and keep the manual reload button only. Ten seconds is imperceptible
+# for a sync tool and costs one directory stat per folder.
+DATA_WATCH_SECONDS = 10

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import threading
+import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -21,6 +25,7 @@ from .config import (
     DATA_DIR,
     DATA_NUTRITION_DIR,
     DATA_RUNNING_DIR,
+    DATA_WATCH_SECONDS,
     DATA_WORKOUT_DIR,
     DB_PATH,
     FEEDBACK_COMPLETION,
@@ -44,7 +49,37 @@ from .config import (
 from .parsers import SUPPORTED_EXTENSIONS, Activity, parse_file
 from .store import Store
 
-app = FastAPI(title="Coach Running", version="0.3.0")
+logger = logging.getLogger("coach")
+
+
+def _watch_data_folder() -> None:
+    """Rescan in the background when files appear in data/.
+
+    Makes an auto-exporting recorder (OpenTracks can export after every
+    recording) land in the app without anyone pressing reload.
+    """
+    while True:
+        time.sleep(DATA_WATCH_SECONDS)
+        try:
+            with _lock:
+                if _signature != _data_signature():
+                    _rescan()
+                    logger.info("data folder changed: rescan complete")
+        except Exception:  # pragma: no cover - a watcher must never die
+            logger.exception("data watcher failed; retrying next tick")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    if DATA_WATCH_SECONDS > 0:
+        thread = threading.Thread(
+            target=_watch_data_folder, name="data-watcher", daemon=True
+        )
+        thread.start()
+    yield
+
+
+app = FastAPI(title="Coach Running", version="0.3.0", lifespan=lifespan)
 
 store = Store(DB_PATH)
 
@@ -1151,6 +1186,13 @@ async def api_upload(category: str, filename: str, request: Request) -> dict:
 # ---------------------------------------------------------------------------
 # Misc
 # ---------------------------------------------------------------------------
+@app.get("/api/data-version")
+def api_data_version() -> dict:
+    """Cheap fingerprint of the data folders, polled by the UI."""
+    version = hashlib.sha1(repr(_data_signature()).encode()).hexdigest()[:12]
+    return {"version": version, "watcher_seconds": DATA_WATCH_SECONDS}
+
+
 @app.post("/api/reload")
 def api_reload() -> dict:
     with _lock:

@@ -821,3 +821,19 @@ body.onboarding-open { overflow: hidden; }
   outline: 3px solid var(--accent-blue);
   outline-offset: 1px;
 }
+
+/* ----- New-data toast ----- */
+.data-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1500;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-left: 4px solid var(--success);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}

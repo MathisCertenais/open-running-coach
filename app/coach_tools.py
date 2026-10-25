@@ -18,11 +18,12 @@ pure and testable without FastAPI, a database or a network.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
-from . import analysis
+from . import analysis, coaching
 from .activity import compute_stats
+from .config import INTENSITY_GROUPS
 from .parsers import Activity
 
 MAX_ROWS = 50
@@ -91,6 +92,8 @@ def search_activities(context: dict, arguments: dict) -> dict:
     min_km = _number(arguments.get("min_distance_km"))
     max_km = _number(arguments.get("max_distance_km"))
     activity_type = (arguments.get("activity_type") or "").strip().lower()
+    conditions = (arguments.get("conditions") or "").strip().lower()
+    feedback = context.get("feedback") or {}
     limit = int(_number(arguments.get("limit")) or 10)
     limit = max(1, min(limit, MAX_ROWS))
 
@@ -105,6 +108,10 @@ def search_activities(context: dict, arguments: dict) -> dict:
             continue
         if activity_type and activity.activity_type != activity_type:
             continue
+        if conditions:
+            reported = (feedback.get(activity.id) or {}).get("conditions") or ""
+            if reported != conditions:
+                continue
         stats = compute_stats(activity)
         distance_km = stats["distance_m"] / 1000.0
         if min_km is not None and distance_km < min_km:
@@ -272,6 +279,284 @@ def get_sessions(context: dict, arguments: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# get_load_series
+# ---------------------------------------------------------------------------
+def _week_start(day: date) -> date:
+    return day - timedelta(days=day.weekday())
+
+
+def get_load_series(context: dict, arguments: dict) -> dict:
+    """Daily or weekly training load with the chronic and acute averages."""
+    days = int(_number(arguments.get("days")) or 84)
+    days = max(7, min(days, 365))
+    bucket = (arguments.get("bucket") or "week").strip().lower()
+    if bucket not in ("day", "week"):
+        bucket = "week"
+
+    activities = context.get("activities") or []
+    rpe_map = context.get("rpe") or {}
+    load_days = coaching.full_load_series(activities, rpe_map)
+    if not load_days:
+        return {"bucket": bucket, "points": []}
+    # The load series carries the activity count; the fitness series carries
+    # the moving averages. Merge them by date.
+    fitness = {
+        day["date"]: day for day in coaching.fitness_series(activities, rpe_map)["days"]
+    }
+    series = [
+        {
+            "date": day["date"],
+            "load": day["load"],
+            "activities": day.get("activities", 0),
+            "ctl": fitness.get(day["date"], {}).get("ctl"),
+            "atl": fitness.get(day["date"], {}).get("atl"),
+        }
+        for day in load_days
+    ][-days:]
+
+    if bucket == "day":
+        points = [
+            {
+                "date": day["date"],
+                "load": day["load"],
+                "activities": day.get("activities", 0),
+                "ctl": day.get("ctl"),
+                "atl": day.get("atl"),
+            }
+            for day in series
+        ]
+    else:
+        grouped: dict[str, dict] = {}
+        for day in series:
+            week = _week_start(date.fromisoformat(day["date"])).isoformat()
+            entry = grouped.setdefault(
+                week, {"week_start": week, "load": 0.0, "activities": 0, "days": 0}
+            )
+            entry["load"] += day.get("load") or 0
+            entry["activities"] += day.get("activities") or 0
+            entry["days"] += 1
+            entry["ctl"] = day.get("ctl")
+            entry["atl"] = day.get("atl")
+        points = [
+            {
+                "week_start": entry["week_start"],
+                "load": round(entry["load"], 1),
+                "activities": entry["activities"],
+                "days": entry["days"],
+                "ctl_end": entry.get("ctl"),
+                "atl_end": entry.get("atl"),
+            }
+            for _, entry in sorted(grouped.items())
+        ]
+
+    loads = [point["load"] for point in points]
+    return {
+        "bucket": bucket,
+        "from_date": series[0]["date"],
+        "to_date": series[-1]["date"],
+        "note": "The series starts at the first recorded activity; earlier days have no data.",
+        "points": points,
+        "total_load": round(sum(loads), 1),
+        "highest": max(points, key=lambda point: point["load"]) if points else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# get_weights
+# ---------------------------------------------------------------------------
+def get_weights(context: dict, arguments: dict) -> dict:
+    """Weight history, oldest first, with the trend per week."""
+    limit = int(_number(arguments.get("limit")) or 30)
+    limit = max(2, min(limit, 120))
+
+    rows = sorted(
+        (row for row in context.get("weights") or [] if row.get("weight_kg")),
+        key=lambda row: row.get("date", ""),
+    )
+    if not rows:
+        return {"points": [], "trend_kg_per_week": None, "note": "No weight logged"}
+    rows = rows[-limit:]
+
+    first, last = rows[0], rows[-1]
+    trend = None
+    first_day, last_day = _parse_date(first["date"]), _parse_date(last["date"])
+    if first_day and last_day and (last_day - first_day).days >= 7:
+        weeks = (last_day - first_day).days / 7.0
+        trend = round((last["weight_kg"] - first["weight_kg"]) / weeks, 2)
+
+    return {
+        "points": [
+            {"date": row["date"], "weight_kg": round(float(row["weight_kg"]), 1)}
+            for row in rows
+        ],
+        "first_kg": round(float(first["weight_kg"]), 1),
+        "last_kg": round(float(last["weight_kg"]), 1),
+        "change_kg": round(float(last["weight_kg"]) - float(first["weight_kg"]), 1),
+        "trend_kg_per_week": trend,
+        "window_days": (last_day - first_day).days if first_day and last_day else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# get_nutrition
+# ---------------------------------------------------------------------------
+def get_nutrition(context: dict, arguments: dict) -> dict:
+    """Daily nutrition, steps and check-in values, newest first."""
+    from_date = _date_arg(arguments, "from_date")
+    to_date = _date_arg(arguments, "to_date")
+    limit = int(_number(arguments.get("limit")) or 14)
+    limit = max(1, min(limit, 60))
+
+    rows = []
+    for row in context.get("nutrition") or []:
+        day = _parse_date(row.get("date"))
+        if day is None:
+            continue
+        if from_date and day < from_date:
+            continue
+        if to_date and day > to_date:
+            continue
+        macros = row.get("macros") or {}
+        rows.append(
+            {
+                "date": row["date"],
+                "calories": macros.get("calories"),
+                "protein_g": macros.get("protein_g"),
+                "carbs_g": macros.get("carbs_g"),
+                "fat_g": macros.get("fat_g"),
+                "steps": row.get("steps"),
+                "hydration_l": row.get("hydration_l"),
+                "energy_1_5": row.get("energy"),
+                "appetite_1_5": row.get("appetite"),
+                "fueling": {
+                    "before": bool(row.get("fueling_before")),
+                    "during": bool(row.get("fueling_during")),
+                    "after": bool(row.get("fueling_after")),
+                },
+            }
+        )
+
+    rows.sort(key=lambda item: item["date"], reverse=True)
+
+    def average(field):
+        values = [
+            row[field] for row in rows if isinstance(row.get(field), (int, float))
+        ]
+        return round(sum(values) / len(values), 1) if values else None
+
+    return {
+        "matched": len(rows),
+        "returned": min(len(rows), limit),
+        "days": rows[:limit],
+        "average_calories": average("calories"),
+        "average_protein_g": average("protein_g"),
+        "average_steps": average("steps"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# compare_periods
+# ---------------------------------------------------------------------------
+def _intensity_percentages(activities: list) -> dict:
+    totals = {name: 0.0 for name in INTENSITY_GROUPS}
+    for activity in activities:
+        zones = analysis.compute_pace_zones(activity.points, use_gap=True)["zones"]
+        for name, config in INTENSITY_GROUPS.items():
+            for index in config["zones"]:
+                totals[name] += zones[index]["time_s"]
+    overall = sum(totals.values())
+    if overall <= 0:
+        return {name: None for name in totals}
+    return {name: round(100.0 * value / overall, 1) for name, value in totals.items()}
+
+
+def _period_summary(context: dict, start: date, end: date) -> dict:
+    activities = [
+        activity
+        for activity in context.get("activities") or []
+        if _activity_date(activity) and start <= _activity_date(activity) <= end
+    ]
+    rpe_map = context.get("rpe") or {}
+    distance = moving = elevation = load = 0.0
+    for activity in activities:
+        stats = compute_stats(activity)
+        distance += stats["distance_m"]
+        moving += stats["moving_time_s"]
+        elevation += stats["elevation_gain_m"]
+        load += coaching.activity_load(activity, rpe_map.get(activity.id))["load"]
+
+    sessions = [
+        session
+        for session in context.get("sessions") or []
+        if (day := _parse_date(session.get("date"))) and start <= day <= end
+    ]
+    kinds: dict[str, int] = {}
+    for session in sessions:
+        kind = session.get("kind") or "other"
+        kinds[kind] = kinds.get(kind, 0) + 1
+
+    return {
+        "from": start.isoformat(),
+        "to": end.isoformat(),
+        "activities": len(activities),
+        "distance_km": round(distance / 1000.0, 1),
+        "moving_min": round(moving / 60.0, 1),
+        "elevation_gain_m": round(elevation),
+        "average_pace_s_per_km": round(moving / (distance / 1000.0), 1)
+        if distance
+        else None,
+        "total_load": round(load, 1),
+        "intensity_pct": _intensity_percentages(activities),
+        "sessions": {"total": len(sessions), "by_kind": kinds},
+    }
+
+
+def compare_periods(context: dict, arguments: dict) -> dict:
+    """Two date ranges side by side, with the difference between them."""
+    start_a = _date_arg(arguments, "from_date")
+    end_a = _date_arg(arguments, "to_date")
+    start_b = _date_arg(arguments, "compare_from_date")
+    end_b = _date_arg(arguments, "compare_to_date")
+
+    if start_a and end_a and start_b and end_b:
+        pass
+    else:
+        days = int(_number(arguments.get("days")) or 28)
+        days = max(7, min(days, 365))
+        today = date.today()
+        end_b = today - timedelta(days=days)
+        start_b = end_b - timedelta(days=days - 1)
+        end_a = today
+        start_a = end_a - timedelta(days=days - 1)
+
+    if start_a > end_a or start_b > end_b:
+        return {"error": "A period ends before it starts"}
+
+    first = _period_summary(context, start_a, end_a)
+    second = _period_summary(context, start_b, end_b)
+
+    def delta(key):
+        return round(first[key] - second[key], 1)
+
+    return {
+        "current": first,
+        "comparison": second,
+        "delta": {
+            "activities": first["activities"] - second["activities"],
+            "distance_km": delta("distance_km"),
+            "moving_min": delta("moving_min"),
+            "total_load": delta("total_load"),
+            "easy_pct": round(
+                (first["intensity_pct"]["easy"] or 0)
+                - (second["intensity_pct"]["easy"] or 0),
+                1,
+            ),
+        },
+        "note": "The first period is the current one; the delta is current minus comparison.",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 TOOL_SCHEMAS = [
@@ -299,6 +584,11 @@ TOOL_SCHEMAS = [
                             "street_running",
                             "track_running",
                         ],
+                    },
+                    "conditions": {
+                        "type": "string",
+                        "enum": ["cool", "temperate", "warm", "hot", "humid"],
+                        "description": "Only runs where this was recorded",
                     },
                     "limit": {"type": "integer", "minimum": 1, "maximum": MAX_ROWS},
                 },
@@ -379,10 +669,99 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_load_series",
+            "description": (
+                "Training load over time, daily or weekly, with the chronic (CTL) "
+                "and acute (ATL) averages. Use it for trend questions the snapshot "
+                "summary cannot answer."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {"type": "integer", "minimum": 7, "maximum": 365},
+                    "bucket": {"type": "string", "enum": ["day", "week"]},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weights",
+            "description": (
+                "Weight history, oldest first, with the total change and the trend "
+                "per week."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 2, "maximum": 120},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_nutrition",
+            "description": (
+                "Daily nutrition: macros, steps, hydration, energy and appetite "
+                "ratings, fueling flags. Newest first."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "from_date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "to_date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 60},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "compare_periods",
+            "description": (
+                "Two date ranges side by side: volume, load, pace, intensity "
+                "distribution and sessions. With no ranges, compares the last N "
+                "days with the N before."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "from_date": {
+                        "type": "string",
+                        "description": "current period start",
+                    },
+                    "to_date": {"type": "string", "description": "current period end"},
+                    "compare_from_date": {"type": "string"},
+                    "compare_to_date": {"type": "string"},
+                    "days": {
+                        "type": "integer",
+                        "minimum": 7,
+                        "maximum": 365,
+                        "description": "used only when no ranges are given",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 _HANDLERS = {
     "search_activities": search_activities,
+    "get_load_series": get_load_series,
+    "get_weights": get_weights,
+    "get_nutrition": get_nutrition,
+    "compare_periods": compare_periods,
     "get_activity": get_activity,
     "best_efforts": best_efforts,
     "get_sessions": get_sessions,

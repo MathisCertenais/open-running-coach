@@ -1138,6 +1138,8 @@ def _coach_tool_context() -> dict:
         "feedback": store.all_feedback(),
         "notes": store.all_notes(),
         "sessions": store.list_sessions(),
+        "weights": store.list_weights(),
+        "nutrition": store.list_nutrition(),
     }
 
 

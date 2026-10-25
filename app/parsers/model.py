@@ -3,30 +3,33 @@
 Every parser (KMZ, GPX, TCX, future FIT) returns an :class:`Activity`, so the
 rest of the app is format-agnostic.
 """
+
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
-import xml.etree.ElementTree as ET
 
 
 @dataclass
 class TrackPoint:
     """A timestamped GPS point of an activity."""
+
     lat: Optional[float] = None
     lon: Optional[float] = None
     ele: Optional[float] = None
     time: Optional[datetime] = None
-    speed: Optional[float] = None       # m/s
-    hr: Optional[float] = None          # bpm
-    cadence: Optional[float] = None     # rpm
-    ptype: Optional[str] = None         # trackpoint type (TRACKPOINT, IDLE, ...)
+    speed: Optional[float] = None  # m/s
+    hr: Optional[float] = None  # bpm
+    cadence: Optional[float] = None  # rpm
+    ptype: Optional[str] = None  # trackpoint type (TRACKPOINT, IDLE, ...)
 
 
 @dataclass
 class Marker:
     """A waypoint marker of an activity (e.g. a pause)."""
+
     lat: float = 0.0
     lon: float = 0.0
     ele: Optional[float] = None
@@ -38,11 +41,12 @@ class Marker:
 @dataclass
 class Activity:
     """A complete activity, parsed from a file."""
-    id: str                        # stable id (format-prefixed)
+
+    id: str  # stable id (format-prefixed)
     filename: str
     name: str
     description: Optional[str]
-    activity_type: str             # normalized
+    activity_type: str  # normalized
     activity_type_raw: str
     points: list[TrackPoint] = field(default_factory=list)
     segments: list[list[TrackPoint]] = field(default_factory=list)  # laps

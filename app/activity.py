@@ -1,8 +1,8 @@
 """Basic activity statistics (distance, pace, elevation, ...)."""
+
 from __future__ import annotations
 
 from math import asin, cos, radians, sin, sqrt
-from typing import Optional
 
 from .config import MAX_MOVING_GAP, MOVING_SPEED_THRESHOLD
 from .parsers import Activity, TrackPoint
@@ -116,7 +116,9 @@ def compute_stats(activity: Activity) -> dict:
     valid = [p for p in pts if p.lat is not None and p.lon is not None]
     if len(valid) < 2:
         if activity.start_time and activity.end_time:
-            empty["elapsed_time_s"] = (activity.end_time - activity.start_time).total_seconds()
+            empty["elapsed_time_s"] = (
+                activity.end_time - activity.start_time
+            ).total_seconds()
         return empty
 
     distance_m = 0.0
@@ -127,8 +129,12 @@ def compute_stats(activity: Activity) -> dict:
 
     for i in range(1, len(pts)):
         a, b = pts[i - 1], pts[i]
-        if not (a.lat is not None and b.lat is not None
-                and a.lon is not None and b.lon is not None):
+        if not (
+            a.lat is not None
+            and b.lat is not None
+            and a.lon is not None
+            and b.lon is not None
+        ):
             continue
         distance_m += step_distance(a, b)
         spd = step_speed(a, b)
@@ -177,7 +183,9 @@ def compute_stats(activity: Activity) -> dict:
         "max_speed_ms": round(max_speed, 2) if max_speed > 0 else None,
         "avg_hr": round(sum(hr_vals) / len(hr_vals)) if hr_vals else None,
         "max_hr": max(hr_vals) if hr_vals else None,
-        "avg_cadence": round(sum(cadence_vals) / len(cadence_vals), 1) if cadence_vals else None,
+        "avg_cadence": round(sum(cadence_vals) / len(cadence_vals), 1)
+        if cadence_vals
+        else None,
         "has_hr": bool(hr_vals),
         "has_cadence": bool(cadence_vals),
     }
@@ -208,21 +216,30 @@ def to_detail(activity: Activity, note: str, stats: dict) -> dict:
     summary = to_summary(activity, note, stats)
     points = []
     for p in activity.points:
-        points.append([
-            p.lat, p.lon, p.ele,
-            p.time.isoformat() if p.time else None,
-            p.speed, p.hr, p.cadence, p.ptype,
-        ])
+        points.append(
+            [
+                p.lat,
+                p.lon,
+                p.ele,
+                p.time.isoformat() if p.time else None,
+                p.speed,
+                p.hr,
+                p.cadence,
+                p.ptype,
+            ]
+        )
     markers = []
     for m in activity.markers:
-        markers.append({
-            "lat": m.lat,
-            "lon": m.lon,
-            "ele": m.ele,
-            "name": m.name,
-            "description": m.description,
-            "time": m.time.isoformat() if m.time else None,
-        })
+        markers.append(
+            {
+                "lat": m.lat,
+                "lon": m.lon,
+                "ele": m.ele,
+                "name": m.name,
+                "description": m.description,
+                "time": m.time.isoformat() if m.time else None,
+            }
+        )
     summary["points"] = points
     summary["markers"] = markers
     return summary
@@ -230,6 +247,8 @@ def to_detail(activity: Activity, note: str, stats: dict) -> dict:
 
 def _count_segments(activity: Activity) -> int:
     """Count the number of non-empty segments (laps)."""
-    return sum(1 for seg in activity.segments if any(
-        p.lat is not None and p.lon is not None for p in seg
-    ))
+    return sum(
+        1
+        for seg in activity.segments
+        if any(p.lat is not None and p.lon is not None for p in seg)
+    )

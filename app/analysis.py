@@ -1,6 +1,7 @@
 """Advanced activity analysis: splits, laps, pace zones, GAP, records,
 matched-route detection, and monthly statistics.
 """
+
 from __future__ import annotations
 
 from bisect import bisect_left
@@ -20,11 +21,14 @@ from .config import (
 )
 from .parsers import Activity, TrackPoint
 
+
 def _is_moving(a: TrackPoint, b: TrackPoint) -> bool:
     return is_moving_step(a, b)
 
 
-def _smooth_altitudes(values: list[Optional[float]], window: int = 5) -> list[Optional[float]]:
+def _smooth_altitudes(
+    values: list[Optional[float]], window: int = 5
+) -> list[Optional[float]]:
     """Moving-average smoothing that tolerates missing (None) altitudes."""
     if not values:
         return []
@@ -79,14 +83,16 @@ def _steps(points: list[TrackPoint]) -> list[dict]:
 
         speed = step_speed(a, b)
 
-        steps.append({
-            "d": d,
-            "dt": dt,
-            "dt_moving": dt if moving else 0.0,
-            "grade": grade,
-            "speed": speed,
-            "gain": gain,
-        })
+        steps.append(
+            {
+                "d": d,
+                "dt": dt,
+                "dt_moving": dt if moving else 0.0,
+                "grade": grade,
+                "speed": speed,
+                "gain": gain,
+            }
+        )
     return steps
 
 
@@ -137,16 +143,18 @@ def compute_laps(activity: Activity) -> list[dict]:
         stats = compute_stats(_segment_as_activity(activity, seg))
         if stats["distance_m"] < 5:
             continue  # empty or too-short segment
-        laps.append({
-            "index": i + 1,
-            "start_time": seg[0].time.isoformat() if seg and seg[0].time else None,
-            "distance_m": stats["distance_m"],
-            "moving_time_s": stats["moving_time_s"],
-            "elapsed_time_s": stats["elapsed_time_s"],
-            "pace_s_per_km": stats["avg_pace_s_per_km"],
-            "elevation_gain_m": stats["elevation_gain_m"],
-            "avg_hr": stats["avg_hr"],
-        })
+        laps.append(
+            {
+                "index": i + 1,
+                "start_time": seg[0].time.isoformat() if seg and seg[0].time else None,
+                "distance_m": stats["distance_m"],
+                "moving_time_s": stats["moving_time_s"],
+                "elapsed_time_s": stats["elapsed_time_s"],
+                "pace_s_per_km": stats["avg_pace_s_per_km"],
+                "elevation_gain_m": stats["elevation_gain_m"],
+                "avg_hr": stats["avg_hr"],
+            }
+        )
     return laps
 
 
@@ -170,8 +178,17 @@ def _segment_as_activity(activity: Activity, seg: list[TrackPoint]) -> Activity:
 # ---------------------------------------------------------------------------
 def compute_pace_zones(points: list[TrackPoint]) -> dict:
     steps = _steps(points)
-    zones = [{"name": z["name"], "color": z["color"], "min": z["min"], "max": z["max"],
-              "time_s": 0.0, "distance_m": 0.0} for z in PACE_ZONES]
+    zones = [
+        {
+            "name": z["name"],
+            "color": z["color"],
+            "min": z["min"],
+            "max": z["max"],
+            "time_s": 0.0,
+            "distance_m": 0.0,
+        }
+        for z in PACE_ZONES
+    ]
     total_time = 0.0
     total_distance = 0.0
 
@@ -190,7 +207,9 @@ def compute_pace_zones(points: list[TrackPoint]) -> dict:
     for z in zones:
         z["time_s"] = round(z["time_s"], 1)
         z["distance_m"] = round(z["distance_m"], 1)
-        z["percent"] = round(100.0 * z["time_s"] / total_time, 1) if total_time > 0 else 0.0
+        z["percent"] = (
+            round(100.0 * z["time_s"] / total_time, 1) if total_time > 0 else 0.0
+        )
 
     return {
         "zones": zones,
@@ -281,16 +300,20 @@ def compute_best_efforts(activity: Activity) -> list[dict]:
         best = _best_time(cum_d, cum_t, dist_m)
         if best is None:
             continue
-        efforts.append({
-            "label": label,
-            "distance_m": dist_m,
-            "time_s": round(best, 1),
-            "pace_s_per_km": round(best / (dist_m / 1000.0), 1),
-        })
+        efforts.append(
+            {
+                "label": label,
+                "distance_m": dist_m,
+                "time_s": round(best, 1),
+                "pace_s_per_km": round(best / (dist_m / 1000.0), 1),
+            }
+        )
     return efforts
 
 
-def _best_time(cum_d: list[float], cum_t: list[float], target: float) -> Optional[float]:
+def _best_time(
+    cum_d: list[float], cum_t: list[float], target: float
+) -> Optional[float]:
     n = len(cum_d)
     best: Optional[float] = None
     for i in range(n):
@@ -384,13 +407,16 @@ def monthly_stats(activities: list[Activity]) -> list[dict]:
         if a.start_time is None:
             continue
         key = a.start_time.strftime("%Y-%m")
-        m = months.setdefault(key, {
-            "month": key,
-            "activities": 0,
-            "distance_m": 0.0,
-            "moving_time_s": 0.0,
-            "elevation_gain_m": 0.0,
-        })
+        m = months.setdefault(
+            key,
+            {
+                "month": key,
+                "activities": 0,
+                "distance_m": 0.0,
+                "moving_time_s": 0.0,
+                "elevation_gain_m": 0.0,
+            },
+        )
         st = compute_stats(a)
         m["activities"] += 1
         m["distance_m"] += st["distance_m"]
@@ -404,9 +430,11 @@ def monthly_stats(activities: list[Activity]) -> list[dict]:
         m["distance_m"] = round(m["distance_m"])
         m["moving_time_s"] = round(m["moving_time_s"])
         m["elevation_gain_m"] = round(m["elevation_gain_m"])
-        m["avg_pace_s_per_km"] = round(
-            m["moving_time_s"] / (m["distance_m"] / 1000.0), 1
-        ) if m["distance_m"] > 0 else 0.0
+        m["avg_pace_s_per_km"] = (
+            round(m["moving_time_s"] / (m["distance_m"] / 1000.0), 1)
+            if m["distance_m"] > 0
+            else 0.0
+        )
         if prev is not None:
             m["delta_distance_m"] = round(m["distance_m"] - prev["distance_m"])
             m["delta_moving_time_s"] = round(m["moving_time_s"] - prev["moving_time_s"])

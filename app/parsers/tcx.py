@@ -2,18 +2,19 @@
 
 TCX has explicit <Lap> elements, which map directly to the app's segments.
 """
+
 from __future__ import annotations
 
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
-import xml.etree.ElementTree as ET
 
 from .model import (
     Activity,
     TrackPoint,
-    _children,
     _child,
+    _children,
     _find_text,
     _local,
     _normalize_type,
@@ -51,7 +52,9 @@ def _parse_trackpoint(tp: ET.Element) -> TrackPoint:
     ext = _child(tp, "Extensions")
     spd = _parse_float(_find_text(ext, {"Speed"})) if ext is not None else None
 
-    return TrackPoint(lat=lat, lon=lon, ele=ele, time=time, speed=spd, hr=hr, cadence=cad)
+    return TrackPoint(
+        lat=lat, lon=lon, ele=ele, time=time, speed=spd, hr=hr, cadence=cad
+    )
 
 
 def parse_tcx(path: Path) -> Optional[Activity]:

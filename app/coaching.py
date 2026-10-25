@@ -5,6 +5,7 @@ All models work from pace + duration (+ optional session-RPE), so they remain
 valid even though heart-rate data is not available yet. Heart rate can be
 plugged in later without reworking the load series.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
@@ -105,7 +106,9 @@ def _activity_date(activity: Activity) -> Optional[date]:
     return st.astimezone(timezone.utc).date()
 
 
-def daily_load_map(activities: list[Activity], rpe_map: dict[str, int]) -> dict[date, dict]:
+def daily_load_map(
+    activities: list[Activity], rpe_map: dict[str, int]
+) -> dict[date, dict]:
     """Aggregate activities into a per-day load map (UTC date of start time)."""
     daily: dict[date, dict] = {}
     for a in activities:
@@ -135,12 +138,14 @@ def full_load_series(activities: list[Activity], rpe_map: dict[str, int]) -> lis
     while d <= end:
         info = daily.get(d)
         load = info["load"] if info else 0.0
-        series.append({
-            "date": d.isoformat(),
-            "load": round(load, 1),
-            "activities": info["activities"] if info else 0,
-            "has_rpe": (info["rpe_count"] if info else 0) > 0,
-        })
+        series.append(
+            {
+                "date": d.isoformat(),
+                "load": round(load, 1),
+                "activities": info["activities"] if info else 0,
+                "has_rpe": (info["rpe_count"] if info else 0) > 0,
+            }
+        )
         d += timedelta(days=1)
     return series
 
@@ -166,14 +171,16 @@ def fitness_series(activities: list[Activity], rpe_map: dict[str, int]) -> dict:
         ctl += (tl - ctl) / CTL_TAU_DAYS
         atl += (tl - atl) / ATL_TAU_DAYS
         tsb = ctl - atl
-        days.append({
-            "date": item["date"],
-            "load": item["load"],
-            "ctl": round(ctl, 1),
-            "atl": round(atl, 1),
-            "tsb": round(tsb, 1),
-            "form": _form_band(tsb),
-        })
+        days.append(
+            {
+                "date": item["date"],
+                "load": item["load"],
+                "ctl": round(ctl, 1),
+                "atl": round(atl, 1),
+                "tsb": round(tsb, 1),
+                "form": _form_band(tsb),
+            }
+        )
     return {"days": days, "current": days[-1]}
 
 
@@ -222,14 +229,16 @@ def acwr_series(activities: list[Activity], rpe_map: dict[str, int]) -> dict:
         if acute is not None and chronic is not None and chronic > 0:
             acwr = acute / chronic
             band = _acwr_band(acwr)
-        days.append({
-            "date": item["date"],
-            "load": item["load"],
-            "acute": round(acute, 1) if acute is not None else None,
-            "chronic": round(chronic, 1) if chronic is not None else None,
-            "acwr": round(acwr, 2) if acwr is not None else None,
-            "band": band,
-        })
+        days.append(
+            {
+                "date": item["date"],
+                "load": item["load"],
+                "acute": round(acute, 1) if acute is not None else None,
+                "chronic": round(chronic, 1) if chronic is not None else None,
+                "acwr": round(acwr, 2) if acwr is not None else None,
+                "band": band,
+            }
+        )
 
     current = next((d for d in reversed(days) if d["acwr"] is not None), None)
     return {"days": days, "current": current}
@@ -251,6 +260,7 @@ def _zone_group_totals(points: list) -> dict:
 
 def intensity_distribution(activities: list[Activity]) -> dict:
     """Time/distance split across easy / moderate / hard, weekly and rolling."""
+
     def _window(days: int) -> dict:
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(days=days)
@@ -280,8 +290,12 @@ def _finalize_groups(groups: dict, days: int) -> dict:
         out[name] = {
             "time_s": round(g["time_s"], 1),
             "distance_m": round(g["distance_m"], 1),
-            "time_pct": round(100.0 * g["time_s"] / total_time, 1) if total_time > 0 else 0.0,
-            "distance_pct": round(100.0 * g["distance_m"] / total_dist, 1) if total_dist > 0 else 0.0,
+            "time_pct": round(100.0 * g["time_s"] / total_time, 1)
+            if total_time > 0
+            else 0.0,
+            "distance_pct": round(100.0 * g["distance_m"] / total_dist, 1)
+            if total_dist > 0
+            else 0.0,
             "color": INTENSITY_GROUPS[name]["color"],
         }
     return {
@@ -314,7 +328,9 @@ def _vdot(distance_m: float, time_s: float) -> Optional[float]:
     return vo2 / pct
 
 
-def _riegel(seed_distance_m: float, seed_time_s: float, target_distance_m: float) -> float:
+def _riegel(
+    seed_distance_m: float, seed_time_s: float, target_distance_m: float
+) -> float:
     """Riegel prediction: T2 = T1 * (D2 / D1)^exponent."""
     return seed_time_s * (target_distance_m / seed_distance_m) ** RIEGEL_EXPONENT
 
@@ -345,7 +361,11 @@ def vo2max_and_predictions(activities: list[Activity]) -> dict:
         vd = _vdot(info["distance_m"], info["time_s"])
         perfs.append({**info, "vdot": round(vd, 1) if vd is not None else None})
 
-    seed = max((p for p in perfs if p["vdot"] is not None), key=lambda p: p["vdot"], default=None)
+    seed = max(
+        (p for p in perfs if p["vdot"] is not None),
+        key=lambda p: p["vdot"],
+        default=None,
+    )
     effective = seed["vdot"] if seed else None
 
     predictions = []
@@ -353,15 +373,17 @@ def vo2max_and_predictions(activities: list[Activity]) -> dict:
         for dist_m, label in RACE_DISTANCES:
             pred = _riegel(seed["distance_m"], seed["time_s"], dist_m)
             actual = best.get(dist_m)
-            predictions.append({
-                "label": label,
-                "distance_m": dist_m,
-                "predicted_time_s": round(pred, 1),
-                "predicted_pace_s_per_km": round(pred / (dist_m / 1000.0), 1),
-                "actual_time_s": round(actual["time_s"], 1) if actual else None,
-                "actual_pace_s_per_km": actual["pace_s_per_km"] if actual else None,
-                "actual_date": actual["date"] if actual else None,
-            })
+            predictions.append(
+                {
+                    "label": label,
+                    "distance_m": dist_m,
+                    "predicted_time_s": round(pred, 1),
+                    "predicted_pace_s_per_km": round(pred / (dist_m / 1000.0), 1),
+                    "actual_time_s": round(actual["time_s"], 1) if actual else None,
+                    "actual_pace_s_per_km": actual["pace_s_per_km"] if actual else None,
+                    "actual_date": actual["date"] if actual else None,
+                }
+            )
 
     return {
         "effective_vo2max": effective,
@@ -422,13 +444,15 @@ def _build_week(week_index: int, volume_min: float, sessions_per_week: int) -> d
 
     def _add(workout_type: str, minutes: float) -> None:
         minutes = max(15, round(minutes))
-        sessions.append({
-            "type": workout_type,
-            "duration_min": minutes,
-            "distance_km": round(minutes * 60.0 / WORKOUT_PACES[workout_type], 1),
-            "zones": WORKOUT_ZONES[workout_type],
-            "description": _workout_description(workout_type),
-        })
+        sessions.append(
+            {
+                "type": workout_type,
+                "duration_min": minutes,
+                "distance_km": round(minutes * 60.0 / WORKOUT_PACES[workout_type], 1),
+                "zones": WORKOUT_ZONES[workout_type],
+                "description": _workout_description(workout_type),
+            }
+        )
 
     # Easy sessions first (base), then hard, recovery, long run last.
     for _ in range(easy_count):
@@ -480,7 +504,9 @@ def generate_plan(
     - Support sessions (strength, mobility, rest) are scheduled as planned
       sessions, reduced during the taper week.
     """
-    sessions_per_week = max(PLAN_MIN_SESSIONS, min(PLAN_MAX_SESSIONS, int(sessions_per_week)))
+    sessions_per_week = max(
+        PLAN_MIN_SESSIONS, min(PLAN_MAX_SESSIONS, int(sessions_per_week))
+    )
     base_date = date.today()
     if start_date:
         try:
@@ -511,7 +537,9 @@ def generate_plan(
         except ValueError:
             pass
     if goal_distance_m:
-        label = next((lbl for d, lbl in RACE_DISTANCES if abs(d - goal_distance_m) < 1), None)
+        label = next(
+            (lbl for d, lbl in RACE_DISTANCES if abs(d - goal_distance_m) < 1), None
+        )
         if goal_date:
             goal_desc = f"Race: {label or (round(goal_distance_m / 1000, 1)) + ' km'} on {goal_date}"
         else:
@@ -524,7 +552,9 @@ def generate_plan(
     for i in range(weeks):
         projected = current
         if (i + 1) % PLAN_DELOAD_EVERY == 0:
-            projected = min(peak_weekly_min, current * PLAN_PROGRESSION) * PLAN_DELOAD_FACTOR
+            projected = (
+                min(peak_weekly_min, current * PLAN_PROGRESSION) * PLAN_DELOAD_FACTOR
+            )
         volume = min(peak_weekly_min, projected)
         plan_weeks.append(_build_week(i, volume, sessions_per_week))
         current = min(peak_weekly_min, current * PLAN_PROGRESSION)
@@ -538,18 +568,20 @@ def generate_plan(
             if is_taper and default["kind"] == "strength":
                 continue
             session_date = base_date + timedelta(days=7 * i + default["day_offset"])
-            support_sessions.append({
-                "date": session_date.isoformat(),
-                "time": "",
-                "kind": default["kind"],
-                "title": default["title"],
-                "duration_min": default["duration_min"],
-                "rpe": default["rpe"],
-                "focus": list(default["focus"]),
-                "status": "planned",
-                "week": i + 1,
-                "source": "plan",
-            })
+            support_sessions.append(
+                {
+                    "date": session_date.isoformat(),
+                    "time": "",
+                    "kind": default["kind"],
+                    "title": default["title"],
+                    "duration_min": default["duration_min"],
+                    "rpe": default["rpe"],
+                    "focus": list(default["focus"]),
+                    "status": "planned",
+                    "week": i + 1,
+                    "source": "plan",
+                }
+            )
 
     return {
         "name": name.strip() or "Training plan",
@@ -637,7 +669,9 @@ def build_snapshot(
     # Athlete.
     height = _to_float(profile.get("height_cm"))
     latest_weight = weights[0]["weight_kg"] if weights else None
-    bmi = (latest_weight / (height / 100.0) ** 2) if (latest_weight and height) else None
+    bmi = (
+        (latest_weight / (height / 100.0) ** 2) if (latest_weight and height) else None
+    )
     athlete = {
         "name": profile.get("name") or None,
         "age": _age_from_birth(profile.get("birth_date")),
@@ -683,29 +717,31 @@ def build_snapshot(
         st = compute_stats(a)
         note = notes.get(a.id) or (a.description or "")
         fb = feedback_map.get(a.id) or {}
-        recent.append({
-            "date": a.start_time.date().isoformat() if a.start_time else None,
-            "type": a.activity_type,
-            "distance_km": round(st["distance_m"] / 1000.0, 2),
-            "moving_min": round(st["moving_time_s"] / 60.0, 1),
-            "pace_s_per_km": st["avg_pace_s_per_km"],
-            "rpe": rpe_map.get(a.id),
-            "note": note[:200] if note else "",
-            "session_type": fb.get("session_type") or None,
-            "surface": fb.get("surface") or None,
-            "completed": fb.get("completed") or None,
-            "readiness": fb.get("readiness"),
-            "sleep_quality": fb.get("sleep_quality"),
-            "stress": fb.get("stress"),
-            "legs": fb.get("legs"),
-            "pain": bool(fb.get("pain")),
-            "pain_location": fb.get("pain_location") or None,
-            "pain_side": fb.get("pain_side") or None,
-            "pain_severity": fb.get("pain_severity"),
-            "pain_timing": fb.get("pain_timing") or None,
-            "pain_trend": fb.get("pain_trend") or None,
-            "is_race": bool(fb.get("is_race")),
-        })
+        recent.append(
+            {
+                "date": a.start_time.date().isoformat() if a.start_time else None,
+                "type": a.activity_type,
+                "distance_km": round(st["distance_m"] / 1000.0, 2),
+                "moving_min": round(st["moving_time_s"] / 60.0, 1),
+                "pace_s_per_km": st["avg_pace_s_per_km"],
+                "rpe": rpe_map.get(a.id),
+                "note": note[:200] if note else "",
+                "session_type": fb.get("session_type") or None,
+                "surface": fb.get("surface") or None,
+                "completed": fb.get("completed") or None,
+                "readiness": fb.get("readiness"),
+                "sleep_quality": fb.get("sleep_quality"),
+                "stress": fb.get("stress"),
+                "legs": fb.get("legs"),
+                "pain": bool(fb.get("pain")),
+                "pain_location": fb.get("pain_location") or None,
+                "pain_side": fb.get("pain_side") or None,
+                "pain_severity": fb.get("pain_severity"),
+                "pain_timing": fb.get("pain_timing") or None,
+                "pain_trend": fb.get("pain_trend") or None,
+                "is_race": bool(fb.get("is_race")),
+            }
+        )
 
     def _avg(field):
         vals = [r[field] for r in recent if isinstance(r.get(field), (int, float))]
@@ -721,7 +757,9 @@ def build_snapshot(
         "pain_locations_10": sorted(
             {r.get("pain_location") for r in pain_runs if r.get("pain_location")}
         ),
-        "pain_worsening_10": sum(1 for r in pain_runs if r.get("pain_trend") == "worse"),
+        "pain_worsening_10": sum(
+            1 for r in pain_runs if r.get("pain_trend") == "worse"
+        ),
     }
 
     # Support sessions (strength/mobility/cross/rest), rolling windows.
@@ -742,7 +780,9 @@ def build_snapshot(
         return round(total, 1)
 
     support_7 = [s for s in sessions if _within(s, 7) and s.get("status") != "skipped"]
-    support_28 = [s for s in sessions if _within(s, 28) and s.get("status") != "skipped"]
+    support_28 = [
+        s for s in sessions if _within(s, 28) and s.get("status") != "skipped"
+    ]
     support = {
         "sessions_7d": len(support_7),
         "sessions_28d": len(support_28),
@@ -770,7 +810,8 @@ def build_snapshot(
         if latest_date is None:
             return {"latest_kg": latest.get("weight_kg"), "pct_per_week": None}
         window = [
-            w for w in ordered
+            w
+            for w in ordered
             if _safe_date(w.get("date"))
             and 0 <= (latest_date - _safe_date(w.get("date"))).days <= 28
         ]
@@ -788,7 +829,8 @@ def build_snapshot(
         }
 
     nutrition_7 = [
-        n for n in nutrition
+        n
+        for n in nutrition
         if _safe_date(n.get("date"))
         and 0 <= (date.today() - _safe_date(n.get("date"))).days < 7
     ]
@@ -809,7 +851,9 @@ def build_snapshot(
     for s in supplements:
         if not s.get("active", True):
             continue
-        taken = sum(1 for n in nutrition_7 if s.get("id") in (n.get("supplements_taken") or []))
+        taken = sum(
+            1 for n in nutrition_7 if s.get("id") in (n.get("supplements_taken") or [])
+        )
         supplement_summary.append({"name": s.get("name"), "taken_days_7d": taken})
 
     nutrition_summary = {
@@ -823,8 +867,11 @@ def build_snapshot(
         "carbs_avg_7d": _avg_macro("carbs_g"),
         "fat_avg_7d": _avg_macro("fat_g"),
         "fueling_days_7d": sum(
-            1 for n in nutrition_7
-            if n.get("fueling_before") or n.get("fueling_during") or n.get("fueling_after")
+            1
+            for n in nutrition_7
+            if n.get("fueling_before")
+            or n.get("fueling_during")
+            or n.get("fueling_after")
         ),
         "supplements": supplement_summary,
         "weight": _weight_trend(weights),
@@ -832,23 +879,27 @@ def build_snapshot(
 
     shoe_list = []
     for s in shoes:
-        shoe_list.append({
-            "name": s.get("name"),
-            "km": round((s.get("distance_m") or 0) / 1000.0, 1),
-            "threshold_km": s.get("threshold_km"),
-            "retired": bool(s.get("retired")),
-        })
+        shoe_list.append(
+            {
+                "name": s.get("name"),
+                "km": round((s.get("distance_m") or 0) / 1000.0, 1),
+                "threshold_km": s.get("threshold_km"),
+                "retired": bool(s.get("retired")),
+            }
+        )
 
     goal_list = []
     for g in goals:
         p = g.get("progress") or {}
-        goal_list.append({
-            "period": g.get("period"),
-            "metric": g.get("metric"),
-            "target": g.get("target"),
-            "current": p.get("current"),
-            "percent": p.get("percent"),
-        })
+        goal_list.append(
+            {
+                "period": g.get("period"),
+                "metric": g.get("metric"),
+                "target": g.get("target"),
+                "current": p.get("current"),
+                "percent": p.get("percent"),
+            }
+        )
 
     snapshot = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -974,113 +1025,143 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
     val, band = acwr.get("ratio"), acwr.get("band")
     if val is not None:
         if band == "high_risk":
-            insights.append({
-                "level": "danger",
-                "title": "Load spike — high injury-risk band",
-                "text": f"Your ACWR is {val:.2f} (above 1.5). Keep the next 7 days easy and "
-                        "avoid adding volume; a sharp load spike is the strongest injury predictor.",
-            })
+            insights.append(
+                {
+                    "level": "danger",
+                    "title": "Load spike — high injury-risk band",
+                    "text": f"Your ACWR is {val:.2f} (above 1.5). Keep the next 7 days easy and "
+                    "avoid adding volume; a sharp load spike is the strongest injury predictor.",
+                }
+            )
         elif band == "caution":
-            insights.append({
-                "level": "warn",
-                "title": "Load rising fast",
-                "text": f"Your ACWR is {val:.2f} (1.3–1.5). Hold this week's volume steady "
-                        "and prioritise recovery.",
-            })
+            insights.append(
+                {
+                    "level": "warn",
+                    "title": "Load rising fast",
+                    "text": f"Your ACWR is {val:.2f} (1.3–1.5). Hold this week's volume steady "
+                    "and prioritise recovery.",
+                }
+            )
         elif band == "undertraining":
-            insights.append({
-                "level": "info",
-                "title": "Undertraining",
-                "text": f"Your ACWR is {val:.2f} (below 0.8). Recent load is well under your "
-                        "baseline — rebuild gradually, not in one big week.",
-            })
+            insights.append(
+                {
+                    "level": "info",
+                    "title": "Undertraining",
+                    "text": f"Your ACWR is {val:.2f} (below 0.8). Recent load is well under your "
+                    "baseline — rebuild gradually, not in one big week.",
+                }
+            )
         elif band == "sweet_spot":
-            insights.append({
-                "level": "good",
-                "title": "Load in the sweet spot",
-                "text": f"Your ACWR is {val:.2f} (0.8–1.3) — a safe progression zone. Keep "
-                        "increases under ~10% per week.",
-            })
+            insights.append(
+                {
+                    "level": "good",
+                    "title": "Load in the sweet spot",
+                    "text": f"Your ACWR is {val:.2f} (0.8–1.3) — a safe progression zone. Keep "
+                    "increases under ~10% per week.",
+                }
+            )
 
     fit = snapshot.get("fitness") or {}
     tsb = fit.get("tsb")
     if tsb is not None:
         if tsb < -20:
-            insights.append({
-                "level": "warn",
-                "title": "High accumulated fatigue",
-                "text": f"Your form (TSB) is {tsb:+.0f}. Consider an easier day or a recovery "
-                        "week before the next hard session.",
-            })
+            insights.append(
+                {
+                    "level": "warn",
+                    "title": "High accumulated fatigue",
+                    "text": f"Your form (TSB) is {tsb:+.0f}. Consider an easier day or a recovery "
+                    "week before the next hard session.",
+                }
+            )
         elif tsb > 15:
-            insights.append({
-                "level": "good",
-                "title": "Fresh legs",
-                "text": f"Your form (TSB) is {tsb:+.0f} — a good window for a key workout or a race.",
-            })
+            insights.append(
+                {
+                    "level": "good",
+                    "title": "Fresh legs",
+                    "text": f"Your form (TSB) is {tsb:+.0f} — a good window for a key workout or a race.",
+                }
+            )
 
     inten = snapshot.get("intensity_28d") or {}
-    easy, mod, hard = inten.get("easy_pct"), inten.get("moderate_pct"), inten.get("hard_pct")
+    easy, mod, hard = (
+        inten.get("easy_pct"),
+        inten.get("moderate_pct"),
+        inten.get("hard_pct"),
+    )
     if easy is not None:
         if mod is not None and mod > 25:
-            insights.append({
-                "level": "warn",
-                "title": "Too much grey zone",
-                "text": f"Moderate (Z3) is {mod}% of your time. Polarise more: move some of it "
-                        "to easy (Z1–Z2) or hard (Z4–Z6).",
-            })
+            insights.append(
+                {
+                    "level": "warn",
+                    "title": "Too much grey zone",
+                    "text": f"Moderate (Z3) is {mod}% of your time. Polarise more: move some of it "
+                    "to easy (Z1–Z2) or hard (Z4–Z6).",
+                }
+            )
         elif hard is not None and hard < 5 and easy > 85:
-            insights.append({
-                "level": "info",
-                "title": "Almost all easy",
-                "text": f"Only {hard}% hard work in the last 28 days. Add one quality session "
-                        "(tempo or intervals) to stimulate fitness.",
-            })
+            insights.append(
+                {
+                    "level": "info",
+                    "title": "Almost all easy",
+                    "text": f"Only {hard}% hard work in the last 28 days. Add one quality session "
+                    "(tempo or intervals) to stimulate fitness.",
+                }
+            )
         elif mod is not None and hard is not None and 70 <= easy <= 88 and mod <= 15:
-            insights.append({
-                "level": "good",
-                "title": "Polarised like a pro",
-                "text": f"Easy {easy}% / moderate {mod}% / hard {hard}% — close to the 80/20 ideal.",
-            })
+            insights.append(
+                {
+                    "level": "good",
+                    "title": "Polarised like a pro",
+                    "text": f"Easy {easy}% / moderate {mod}% / hard {hard}% — close to the 80/20 ideal.",
+                }
+            )
 
     load = snapshot.get("load") or {}
     last7, prev7 = load.get("last_7d"), load.get("prev_7d")
     if last7 is not None and prev7 and prev7 > 0:
         ratio = last7 / prev7
         if ratio > 1.3:
-            insights.append({
-                "level": "warn",
-                "title": "Big week-on-week jump",
-                "text": f"This week's load is {round((ratio - 1) * 100)}% above last week. Cap "
-                        "progression near 10% to stay injury-free.",
-            })
+            insights.append(
+                {
+                    "level": "warn",
+                    "title": "Big week-on-week jump",
+                    "text": f"This week's load is {round((ratio - 1) * 100)}% above last week. Cap "
+                    "progression near 10% to stay injury-free.",
+                }
+            )
 
     for s in snapshot.get("shoes") or []:
         km, thr = s.get("km"), s.get("threshold_km")
         if km is not None and thr and not s.get("retired") and km >= thr:
-            insights.append({
-                "level": "warn",
-                "title": f"Shoe due for replacement: {s.get('name')}",
-                "text": f"{km} km logged against a {thr:.0f} km threshold.",
-            })
+            insights.append(
+                {
+                    "level": "warn",
+                    "title": f"Shoe due for replacement: {s.get('name')}",
+                    "text": f"{km} km logged against a {thr:.0f} km threshold.",
+                }
+            )
 
     days_since = load.get("days_since_last_run")
     if days_since is not None and days_since >= 7:
-        insights.append({
-            "level": "info",
-            "title": "Training gap",
-            "text": f"It has been {days_since} days since your last run. Ease back in with an "
-                    "easy session before adding intensity.",
-        })
+        insights.append(
+            {
+                "level": "info",
+                "title": "Training gap",
+                "text": f"It has been {days_since} days since your last run. Ease back in with an "
+                "easy session before adding intensity.",
+            }
+        )
 
     vo2 = snapshot.get("vo2max") or {}
     if vo2.get("effective"):
-        insights.append({
-            "level": "info",
-            "title": "Current aerobic ceiling",
-            "text": f"Effective VO2max ≈ {vo2['effective']} ml/kg/min (Daniels VDOT). Use the "
-                    "race predictor table for goal pacing.",
-        })
+        insights.append(
+            {
+                "level": "info",
+                "title": "Current aerobic ceiling",
+                "text": f"Effective VO2max ≈ {vo2['effective']} ml/kg/min (Daniels VDOT). Use the "
+                "race predictor table for goal pacing.",
+            }
+        )
 
     # Pain recurrence and prevention work (post-run feedback + support sessions).
     wellness = snapshot.get("wellness") or {}
@@ -1098,52 +1179,62 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
 
     readiness = wellness.get("readiness_avg_10")
     if readiness is not None and readiness <= 2.5:
-        insights.append({
-            "level": "warn",
-            "title": "Low readiness",
-            "text": f"Average pre-run readiness is {readiness}/5 over your last runs. "
-                    "Reduce intensity and protect sleep before adding load.",
-        })
+        insights.append(
+            {
+                "level": "warn",
+                "title": "Low readiness",
+                "text": f"Average pre-run readiness is {readiness}/5 over your last runs. "
+                "Reduce intensity and protect sleep before adding load.",
+            }
+        )
 
     support = snapshot.get("support") or {}
     strength_7d = support.get("strength_7d")
     mobility_7d = support.get("mobility_7d")
     if pain_runs >= 1 and (strength_7d == 0 or mobility_7d == 0):
-        insights.append({
-            "level": "info",
-            "title": "Prevention work is light",
-            "text": f"Strength sessions this week: {strength_7d or 0}, mobility: {mobility_7d or 0}. "
-                    "Add 1–2 short sessions to support the painful area.",
-        })
+        insights.append(
+            {
+                "level": "info",
+                "title": "Prevention work is light",
+                "text": f"Strength sessions this week: {strength_7d or 0}, mobility: {mobility_7d or 0}. "
+                "Add 1–2 short sessions to support the painful area.",
+            }
+        )
     elif support.get("sessions_7d", 0) >= 3:
-        insights.append({
-            "level": "good",
-            "title": "Durability work on track",
-            "text": f"{support.get('sessions_7d')} support sessions this week "
-                    f"({strength_7d or 0} strength, {mobility_7d or 0} mobility).",
-        })
+        insights.append(
+            {
+                "level": "good",
+                "title": "Durability work on track",
+                "text": f"{support.get('sessions_7d')} support sessions this week "
+                f"({strength_7d or 0} strength, {mobility_7d or 0} mobility).",
+            }
+        )
 
     # Fuel & recovery (context only — never prescriptive).
     nutrition = snapshot.get("nutrition") or {}
     weight = nutrition.get("weight") or {}
     per_week = weight.get("pct_per_week")
     if per_week is not None and per_week <= -WEIGHT_LOSS_WARN_PCT_PER_WEEK:
-        insights.append({
-            "level": "warn",
-            "title": "Rapid weight loss",
-            "text": f"You are losing about {abs(per_week):.1f}% of body weight per week. "
-                    "Rapid loss can hurt performance and increase injury/illness risk — fuel "
-                    "adequately and consider professional advice.",
-        })
+        insights.append(
+            {
+                "level": "warn",
+                "title": "Rapid weight loss",
+                "text": f"You are losing about {abs(per_week):.1f}% of body weight per week. "
+                "Rapid loss can hurt performance and increase injury/illness risk — fuel "
+                "adequately and consider professional advice.",
+            }
+        )
 
     energy = nutrition.get("energy_avg")
     if energy is not None and energy <= 2.0:
-        insights.append({
-            "level": "info",
-            "title": "Low energy",
-            "text": f"Average energy is {energy}/5 this week. Check fueling, hydration and "
-                    "recovery before adding training load.",
-        })
+        insights.append(
+            {
+                "level": "info",
+                "title": "Low energy",
+                "text": f"Average energy is {energy}/5 this week. Check fueling, hydration and "
+                "recovery before adding training load.",
+            }
+        )
 
     steps_avg = nutrition.get("steps_avg_7d")
     if steps_avg is not None and steps_avg < STEPS_SEDENTARY_WARN:
@@ -1151,26 +1242,36 @@ def rule_based_insights(snapshot: dict) -> list[dict]:
         extra = ""
         if band in ("caution", "high_risk"):
             extra = " Combined with your rising training load, this raises injury risk."
-        level = "warn" if (steps_avg < STEPS_SEDENTARY_HIGH or band in ("caution", "high_risk")) else "info"
-        insights.append({
-            "level": level,
-            "title": "Low daily activity (sedentary)",
-            "text": f"Average {round(steps_avg)} steps/day this week. Low daily movement is "
-                    "associated with higher injury risk; add easy walking on rest days." + extra,
-        })
+        level = (
+            "warn"
+            if (steps_avg < STEPS_SEDENTARY_HIGH or band in ("caution", "high_risk"))
+            else "info"
+        )
+        insights.append(
+            {
+                "level": level,
+                "title": "Low daily activity (sedentary)",
+                "text": f"Average {round(steps_avg)} steps/day this week. Low daily movement is "
+                "associated with higher injury risk; add easy walking on rest days."
+                + extra,
+            }
+        )
 
     if nutrition.get("logs_7d", 0) >= 3:
         rarely = [
-            s for s in (nutrition.get("supplements") or [])
+            s
+            for s in (nutrition.get("supplements") or [])
             if s.get("taken_days_7d", 0) <= 1
         ]
         if rarely:
             names = ", ".join(s["name"] for s in rarely)
-            insights.append({
-                "level": "info",
-                "title": "Supplement adherence",
-                "text": f"Rarely taken this week: {names}. This is adherence tracking only — "
-                        "no efficacy or dosing advice.",
-            })
+            insights.append(
+                {
+                    "level": "info",
+                    "title": "Supplement adherence",
+                    "text": f"Rarely taken this week: {names}. This is adherence tracking only — "
+                    "no efficacy or dosing advice.",
+                }
+            )
 
     return insights

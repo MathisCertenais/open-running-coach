@@ -11,6 +11,7 @@ Designed to accept exports from different apps with minimal mapping:
 Rows are aggregated per day for nutrition and deduplicated by the import
 tracker (see app/connectors/__init__.py).
 """
+
 from __future__ import annotations
 
 import csv
@@ -119,10 +120,14 @@ def _nutrition_payload(row: dict) -> dict:
     day = _day(_pick(row, NUTRITION_COLUMNS["date"]))
     if not day:
         return {}
-    macros = row.get("macros") if isinstance(row.get("macros"), dict) else {
-        key: _num(_pick(row, NUTRITION_COLUMNS[key]))
-        for key in ("calories", "protein_g", "carbs_g", "fat_g")
-    }
+    macros = (
+        row.get("macros")
+        if isinstance(row.get("macros"), dict)
+        else {
+            key: _num(_pick(row, NUTRITION_COLUMNS[key]))
+            for key in ("calories", "protein_g", "carbs_g", "fat_g")
+        }
+    )
     macros = {k: v for k, v in (macros or {}).items() if v is not None}
     payload = {"date": day}
     if macros:
@@ -208,7 +213,12 @@ def _session_payload(row: dict) -> Optional[dict]:
         focus = [f.strip() for f in focus.replace(",", "|").split("|") if f.strip()]
     elif not isinstance(focus, list):
         focus = []
-    kind = str(_pick(row, WORKOUT_COLUMNS["kind"]) or "strength").strip().lower().replace(" ", "_")
+    kind = (
+        str(_pick(row, WORKOUT_COLUMNS["kind"]) or "strength")
+        .strip()
+        .lower()
+        .replace(" ", "_")
+    )
     if kind not in SESSION_KINDS:
         kind = "strength"
     status = str(_pick(row, WORKOUT_COLUMNS["status"]) or "completed").strip().lower()

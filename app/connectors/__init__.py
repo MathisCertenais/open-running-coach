@@ -3,6 +3,7 @@
 Each domain has its own folder under data/. Files are imported once and
 tracked in SQLite so a restart or a rescan does not duplicate data.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

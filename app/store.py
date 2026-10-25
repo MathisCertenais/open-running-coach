@@ -1,4 +1,5 @@
 """Persistence for notes, goals, profile, weight, shoes, RPE and plans."""
+
 from __future__ import annotations
 
 import json
@@ -187,7 +188,10 @@ class Store:
             self._ensure_column("nutrition_log", "steps", "INTEGER")
 
     def _ensure_column(self, table: str, column: str, ddl: str) -> None:
-        cols = [r["name"] for r in self._conn.execute(f"PRAGMA table_info({table})").fetchall()]
+        cols = [
+            r["name"]
+            for r in self._conn.execute(f"PRAGMA table_info({table})").fetchall()
+        ]
         if column not in cols:
             with self._conn:
                 self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
@@ -231,7 +235,9 @@ class Store:
             )
         return cur.lastrowid
 
-    def update_goal(self, goal_id: int, period: str, metric: str, target: float) -> None:
+    def update_goal(
+        self, goal_id: int, period: str, metric: str, target: float
+    ) -> None:
         with self._conn:
             self._conn.execute(
                 "UPDATE goals SET period = ?, metric = ?, target = ? WHERE id = ?",
@@ -300,8 +306,9 @@ class Store:
             )
         return cur.lastrowid
 
-    def update_shoe(self, shoe_id: int, name: str, notes: str, threshold_km: float,
-                    retired: int) -> None:
+    def update_shoe(
+        self, shoe_id: int, name: str, notes: str, threshold_km: float, retired: int
+    ) -> None:
         with self._conn:
             self._conn.execute(
                 "UPDATE shoes SET name = ?, notes = ?, threshold_km = ?, retired = ? WHERE id = ?",
@@ -311,7 +318,9 @@ class Store:
     def delete_shoe(self, shoe_id: int) -> None:
         with self._conn:
             self._conn.execute("DELETE FROM shoes WHERE id = ?", (shoe_id,))
-            self._conn.execute("DELETE FROM activity_shoe WHERE shoe_id = ?", (shoe_id,))
+            self._conn.execute(
+                "DELETE FROM activity_shoe WHERE shoe_id = ?", (shoe_id,)
+            )
 
     def list_shoes(self) -> list[dict]:
         rows = self._conn.execute(
@@ -344,7 +353,9 @@ class Store:
         return row["shoe_id"] if row else None
 
     def activity_shoe_map(self) -> dict[str, int]:
-        rows = self._conn.execute("SELECT activity_id, shoe_id FROM activity_shoe").fetchall()
+        rows = self._conn.execute(
+            "SELECT activity_id, shoe_id FROM activity_shoe"
+        ).fetchall()
         return {r["activity_id"]: r["shoe_id"] for r in rows}
 
     # ------------------------------------------------------------------
@@ -376,7 +387,9 @@ class Store:
                 )
 
     def all_rpe(self) -> dict[str, int]:
-        rows = self._conn.execute("SELECT activity_id, rpe FROM activity_rpe").fetchall()
+        rows = self._conn.execute(
+            "SELECT activity_id, rpe FROM activity_rpe"
+        ).fetchall()
         return {r["activity_id"]: r["rpe"] for r in rows}
 
     # ------------------------------------------------------------------
@@ -608,8 +621,9 @@ class Store:
         ).fetchall()
         return [self._supplement_row(r) for r in rows]
 
-    def update_supplement(self, supplement_id: int, name: str, dose: str,
-                          frequency: str, active: bool) -> None:
+    def update_supplement(
+        self, supplement_id: int, name: str, dose: str, frequency: str, active: bool
+    ) -> None:
         with self._conn:
             self._conn.execute(
                 "UPDATE supplements SET name = ?, dose = ?, frequency = ?, active = ? WHERE id = ?",
@@ -676,8 +690,9 @@ class Store:
         ).fetchone()
         return self._nutrition_row(row) if row else None
 
-    def upsert_nutrition_macros(self, date_str: str, macros: dict,
-                                steps: Optional[int] = None) -> None:
+    def upsert_nutrition_macros(
+        self, date_str: str, macros: dict, steps: Optional[int] = None
+    ) -> None:
         """Set only macros/steps for a day, preserving manual check-in fields."""
         with self._conn:
             self._conn.execute(
@@ -688,12 +703,17 @@ class Store:
                     macros = excluded.macros,
                     steps = COALESCE(excluded.steps, nutrition_log.steps)
                 """,
-                (date_str, json.dumps(macros or {}), steps,
-                 datetime.now(timezone.utc).isoformat()),
+                (
+                    date_str,
+                    json.dumps(macros or {}),
+                    steps,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
 
-    def list_nutrition(self, date_from: Optional[str] = None,
-                       date_to: Optional[str] = None) -> list[dict]:
+    def list_nutrition(
+        self, date_from: Optional[str] = None, date_to: Optional[str] = None
+    ) -> list[dict]:
         clauses = []
         params: list = []
         if date_from:
@@ -716,7 +736,9 @@ class Store:
     def _nutrition_row(row) -> dict:
         data = dict(row)
         try:
-            data["supplements_taken"] = json.loads(data.get("supplements_taken") or "[]")
+            data["supplements_taken"] = json.loads(
+                data.get("supplements_taken") or "[]"
+            )
         except (ValueError, TypeError):
             data["supplements_taken"] = []
         try:
@@ -737,7 +759,9 @@ class Store:
         ).fetchone()
         return row is not None
 
-    def mark_file_imported(self, path: str, kind: str, mtime_ns: int, size: int) -> None:
+    def mark_file_imported(
+        self, path: str, kind: str, mtime_ns: int, size: int
+    ) -> None:
         with self._conn:
             self._conn.execute(
                 """

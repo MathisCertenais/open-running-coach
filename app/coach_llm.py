@@ -7,6 +7,7 @@ gitignored ``.env``; they are never written to the database or the browser.
 The client targets the OpenAI-compatible ``/chat/completions`` API, so it works
 with OpenAI, Mistral, Groq, Albert, a self-hosted gateway, or local Ollama.
 """
+
 from __future__ import annotations
 
 import json
@@ -117,14 +118,18 @@ def _load_models() -> tuple[list[dict], Optional[str]]:
             models = []
     if not models and LLM_ENABLED:
         # Backward compatibility: a single model from the legacy env vars.
-        models.append(_normalize({
-            "id": "default",
-            "name": LLM_MODEL or "Default",
-            "model": LLM_MODEL,
-            "apiBase": LLM_BASE_URL,
-            "apiKey": LLM_API_KEY,
-            "roles": ["chat"],
-        }))
+        models.append(
+            _normalize(
+                {
+                    "id": "default",
+                    "name": LLM_MODEL or "Default",
+                    "model": LLM_MODEL,
+                    "apiBase": LLM_BASE_URL,
+                    "apiKey": LLM_API_KEY,
+                    "roles": ["chat"],
+                }
+            )
+        )
     return models, default_id or os.environ.get("COACH_LLM_DEFAULT")
 
 
@@ -156,7 +161,9 @@ def list_models() -> list[dict]:
 
 
 def default_model_id() -> Optional[str]:
-    candidates = [m for m in MODELS if "chat" in m.get("roles", []) and _is_configured(m)]
+    candidates = [
+        m for m in MODELS if "chat" in m.get("roles", []) and _is_configured(m)
+    ]
     if DEFAULT_ID:
         for m in candidates:
             if m["id"] == DEFAULT_ID:
@@ -201,7 +208,7 @@ def _sanitize_history(history) -> list[dict]:
         if role not in ("user", "assistant") or not isinstance(content, str):
             continue
         clean.append({"role": role, "content": content[:4000]})
-    return clean[-LLM_HISTORY_TURNS * 2:]
+    return clean[-LLM_HISTORY_TURNS * 2 :]
 
 
 def build_messages(snapshot: dict, history, user_message: str) -> list[dict]:
@@ -209,7 +216,10 @@ def build_messages(snapshot: dict, history, user_message: str) -> list[dict]:
     if len(data) > LLM_CONTEXT_MAX_CHARS:
         data = data[:LLM_CONTEXT_MAX_CHARS] + "... (truncated)"
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT + "\n\nATHLETE_DATA (JSON):\n" + data},
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT + "\n\nATHLETE_DATA (JSON):\n" + data,
+        },
     ]
     messages.extend(_sanitize_history(history))
     messages.append({"role": "user", "content": user_message[:4000]})
@@ -281,7 +291,9 @@ def _model_or_error(model_id: Optional[str]) -> dict:
     return model
 
 
-def chat(snapshot: dict, history, user_message: str, model_id: Optional[str] = None) -> str:
+def chat(
+    snapshot: dict, history, user_message: str, model_id: Optional[str] = None
+) -> str:
     model = _model_or_error(model_id)
     return call_llm(build_messages(snapshot, history, user_message), model)
 

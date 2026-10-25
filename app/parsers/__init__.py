@@ -3,14 +3,15 @@
 The registry maps file extensions to parsers so the loader in main.py can scan
 the data/ folder for every supported format.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional
 
-from .model import Activity, Marker, TrackPoint  # re-exported for convenience
-from .kmz import parse_kmz
 from .gpx import parse_gpx
+from .kmz import parse_kmz
+from .model import Activity, Marker, TrackPoint  # re-exported for convenience
 from .tcx import parse_tcx
 
 # extension (lowercase, with dot) -> parser callable

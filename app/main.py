@@ -1,8 +1,10 @@
 """FastAPI entry point — exposes the running dashboard and its analyses."""
+
 from __future__ import annotations
 
 import threading
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
@@ -11,9 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import activity as activity_mod
-from . import analysis
-from . import coach_llm
-from . import coaching
+from . import analysis, coach_llm, coaching
 from . import connectors as connectors_mod
 from .config import (
     DATA_DIR,
@@ -38,9 +38,8 @@ from .config import (
     STATIC_DIR,
     SUPPLEMENT_FREQUENCIES,
 )
-from .parsers import Activity, SUPPORTED_EXTENSIONS, parse_file
+from .parsers import SUPPORTED_EXTENSIONS, Activity, parse_file
 from .store import Store
-from pathlib import Path
 
 app = FastAPI(title="Coach Running", version="0.3.0")
 
@@ -94,7 +93,8 @@ def _fingerprint(act: Activity) -> tuple:
     """
     stats = activity_mod.compute_stats(act)
     times = [
-        p.time for p in act.points
+        p.time
+        for p in act.points
         if p.lat is not None and p.lon is not None and p.time is not None
     ]
 
@@ -249,11 +249,13 @@ def _shoes_with_mileage() -> list[dict]:
 
     result = []
     for shoe in store.list_shoes():
-        result.append({
-            **shoe,
-            "distance_m": round(dist.get(shoe["id"], 0.0), 1),
-            "activities_count": count.get(shoe["id"], 0),
-        })
+        result.append(
+            {
+                **shoe,
+                "distance_m": round(dist.get(shoe["id"], 0.0), 1),
+                "activities_count": count.get(shoe["id"], 0),
+            }
+        )
     return result
 
 
@@ -338,16 +340,18 @@ def api_matched_runs() -> dict:
         members = []
         for act in group:
             stats = activity_mod.compute_stats(act)
-            members.append({
-                "id": act.id,
-                "filename": act.filename,
-                "date": act.start_time.isoformat() if act.start_time else None,
-                "note": _effective_note(act),
-                "distance_m": stats["distance_m"],
-                "moving_time_s": stats["moving_time_s"],
-                "pace_s_per_km": stats["avg_pace_s_per_km"],
-                "elevation_gain_m": stats["elevation_gain_m"],
-            })
+            members.append(
+                {
+                    "id": act.id,
+                    "filename": act.filename,
+                    "date": act.start_time.isoformat() if act.start_time else None,
+                    "note": _effective_note(act),
+                    "distance_m": stats["distance_m"],
+                    "moving_time_s": stats["moving_time_s"],
+                    "pace_s_per_km": stats["avg_pace_s_per_km"],
+                    "elevation_gain_m": stats["elevation_gain_m"],
+                }
+            )
         result.append(members)
     return {"groups": result}
 
@@ -360,11 +364,14 @@ def api_monthly() -> dict:
 # ---------------------------------------------------------------------------
 # Endpoints — goals
 # ---------------------------------------------------------------------------
-def _period_bounds(period: str, now: Optional[datetime] = None) -> tuple[datetime, datetime]:
+def _period_bounds(
+    period: str, now: Optional[datetime] = None
+) -> tuple[datetime, datetime]:
     now = now or datetime.now(timezone.utc)
     if period == "weekly":
         start = (now - timedelta(days=now.weekday())).replace(
-            hour=0, minute=0, second=0, microsecond=0)
+            hour=0, minute=0, second=0, microsecond=0
+        )
         end = start + timedelta(days=7)
     elif period == "yearly":
         start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -428,8 +435,12 @@ def api_create_goal(payload: GoalPayload) -> dict:
     if payload.metric not in ("distance", "time", "elevation"):
         raise HTTPException(status_code=400, detail="Invalid metric")
     goal_id = store.add_goal(payload.period, payload.metric, payload.target)
-    return {"id": goal_id, "period": payload.period, "metric": payload.metric,
-            "target": payload.target}
+    return {
+        "id": goal_id,
+        "period": payload.period,
+        "metric": payload.metric,
+        "target": payload.target,
+    }
 
 
 @app.put("/api/goals/{goal_id}")
@@ -460,11 +471,13 @@ def api_profile() -> dict:
 
 @app.put("/api/profile")
 def api_update_profile(payload: ProfilePayload) -> dict:
-    store.set_profile({
-        "name": payload.name.strip(),
-        "height_cm": payload.height_cm.strip(),
-        "birth_date": payload.birth_date.strip(),
-    })
+    store.set_profile(
+        {
+            "name": payload.name.strip(),
+            "height_cm": payload.height_cm.strip(),
+            "birth_date": payload.birth_date.strip(),
+        }
+    )
     return store.get_profile()
 
 
@@ -514,14 +527,21 @@ def api_shoes() -> dict:
 
 @app.post("/api/shoes")
 def api_add_shoe(payload: ShoePayload) -> dict:
-    shoe_id = store.add_shoe(payload.name.strip(), payload.notes.strip(), payload.threshold_km)
+    shoe_id = store.add_shoe(
+        payload.name.strip(), payload.notes.strip(), payload.threshold_km
+    )
     return {"id": shoe_id}
 
 
 @app.put("/api/shoes/{shoe_id}")
 def api_update_shoe(shoe_id: int, payload: ShoeUpdatePayload) -> dict:
-    store.update_shoe(shoe_id, payload.name.strip(), payload.notes.strip(),
-                      payload.threshold_km, 1 if payload.retired else 0)
+    store.update_shoe(
+        shoe_id,
+        payload.name.strip(),
+        payload.notes.strip(),
+        payload.threshold_km,
+        1 if payload.retired else 0,
+    )
     return {"id": shoe_id}
 
 
@@ -604,9 +624,13 @@ def _validate_feedback(payload: FeedbackPayload) -> None:
         ("legs", payload.legs),
     ):
         if value is not None and not (1 <= value <= 5):
-            raise HTTPException(status_code=400, detail=f"{name} must be between 1 and 5")
+            raise HTTPException(
+                status_code=400, detail=f"{name} must be between 1 and 5"
+            )
     if payload.pain_severity is not None and not (0 <= payload.pain_severity <= 10):
-        raise HTTPException(status_code=400, detail="pain_severity must be between 0 and 10")
+        raise HTTPException(
+            status_code=400, detail="pain_severity must be between 0 and 10"
+        )
     if payload.rpe is not None and not (1 <= payload.rpe <= 10):
         raise HTTPException(status_code=400, detail="rpe must be between 1 and 10")
 
@@ -616,7 +640,10 @@ def api_get_feedback(activity_id: str) -> dict:
     acts = _ensure_fresh()
     if activity_id not in acts:
         raise HTTPException(status_code=404, detail="Activity not found")
-    return {"feedback": store.get_feedback(activity_id), "rpe": store.get_rpe(activity_id)}
+    return {
+        "feedback": store.get_feedback(activity_id),
+        "rpe": store.get_rpe(activity_id),
+    }
 
 
 @app.put("/api/activities/{activity_id}/feedback")
@@ -627,7 +654,10 @@ def api_set_feedback(activity_id: str, payload: FeedbackPayload) -> dict:
     _validate_feedback(payload)
     store.set_feedback(activity_id, payload.model_dump(exclude={"rpe"}))
     store.set_rpe(activity_id, payload.rpe)
-    return {"feedback": store.get_feedback(activity_id), "rpe": store.get_rpe(activity_id)}
+    return {
+        "feedback": store.get_feedback(activity_id),
+        "rpe": store.get_rpe(activity_id),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -709,13 +739,21 @@ class NutritionPayload(BaseModel):
 
 
 def _validate_nutrition(payload: NutritionPayload) -> None:
-    if payload.hydration_l is not None and not (0 <= payload.hydration_l <= NUTRITION_HYDRATION_MAX_L):
+    if payload.hydration_l is not None and not (
+        0 <= payload.hydration_l <= NUTRITION_HYDRATION_MAX_L
+    ):
         raise HTTPException(status_code=400, detail="hydration_l out of range")
     for name, value in (("energy", payload.energy), ("appetite", payload.appetite)):
-        if value is not None and not (NUTRITION_ENERGY_MIN <= value <= NUTRITION_ENERGY_MAX):
-            raise HTTPException(status_code=400, detail=f"{name} must be between 1 and 5")
+        if value is not None and not (
+            NUTRITION_ENERGY_MIN <= value <= NUTRITION_ENERGY_MAX
+        ):
+            raise HTTPException(
+                status_code=400, detail=f"{name} must be between 1 and 5"
+            )
     if payload.steps is not None and not (0 <= payload.steps <= 100000):
-        raise HTTPException(status_code=400, detail="steps must be between 0 and 100000")
+        raise HTTPException(
+            status_code=400, detail="steps must be between 0 and 100000"
+        )
 
 
 @app.get("/api/nutrition")
@@ -765,7 +803,9 @@ def api_supplements() -> dict:
 @app.post("/api/supplements")
 def api_add_supplement(payload: SupplementPayload) -> dict:
     _validate_supplement(payload)
-    supplement_id = store.add_supplement(payload.name.strip(), payload.dose.strip(), payload.frequency)
+    supplement_id = store.add_supplement(
+        payload.name.strip(), payload.dose.strip(), payload.frequency
+    )
     return {"id": supplement_id}
 
 
@@ -773,8 +813,11 @@ def api_add_supplement(payload: SupplementPayload) -> dict:
 def api_update_supplement(supplement_id: int, payload: SupplementPayload) -> dict:
     _validate_supplement(payload)
     store.update_supplement(
-        supplement_id, payload.name.strip(), payload.dose.strip(),
-        payload.frequency, payload.active,
+        supplement_id,
+        payload.name.strip(),
+        payload.dose.strip(),
+        payload.frequency,
+        payload.active,
     )
     return {"id": supplement_id}
 
@@ -857,7 +900,9 @@ def api_coaching_generate_plan(payload: PlanPayload) -> dict:
         sessions_per_week=payload.sessions_per_week,
         start_date=payload.start_date,
     )
-    plan_id = store.add_plan(data["name"], data["goal_description"], data["weeks"], data)
+    plan_id = store.add_plan(
+        data["name"], data["goal_description"], data["weeks"], data
+    )
     # Materialize the plan's support sessions so they appear in the planner.
     for session in data.get("support_sessions", []):
         store.add_session({**session, "source": "plan", "plan_id": plan_id})

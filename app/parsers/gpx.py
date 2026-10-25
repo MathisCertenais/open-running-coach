@@ -1,16 +1,17 @@
 """Parser for GPX files (Strava export and most other tools)."""
+
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
-import xml.etree.ElementTree as ET
 
 from .model import (
     Activity,
     Marker,
     TrackPoint,
-    _children,
     _child,
+    _children,
     _find_text,
     _local,
     _normalize_type,
@@ -44,7 +45,9 @@ def _parse_trkpt(trkpt: ET.Element) -> TrackPoint:
     cad = _parse_float(_find_text(ext, {"cad", "cadence"})) if ext is not None else None
     spd = _parse_float(_find_text(ext, {"speed"})) if ext is not None else None
 
-    return TrackPoint(lat=lat, lon=lon, ele=ele, time=time, speed=spd, hr=hr, cadence=cad)
+    return TrackPoint(
+        lat=lat, lon=lon, ele=ele, time=time, speed=spd, hr=hr, cadence=cad
+    )
 
 
 def _parse_wpt(wpt: ET.Element) -> Optional[Marker]:

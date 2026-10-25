@@ -7,6 +7,7 @@ exactly what we need to link nutrition and weight to training.
 
 Reference: https://github.com/simonoppowa/OpenNutriTracker/blob/main/docs/export-format.md
 """
+
 from __future__ import annotations
 
 import csv
@@ -47,7 +48,9 @@ def read_export(path: Path) -> dict:
 
         tracked: list[dict] = []
         if "user_tracked_day.json" in names:
-            tracked = json.loads(zf.read(names["user_tracked_day.json"]).decode("utf-8"))
+            tracked = json.loads(
+                zf.read(names["user_tracked_day.json"]).decode("utf-8")
+            )
         elif "user_tracked_day.csv" in names:
             text = zf.read(names["user_tracked_day.csv"]).decode("utf-8")
             tracked = list(csv.DictReader(io.StringIO(text)))
@@ -55,7 +58,9 @@ def read_export(path: Path) -> dict:
         weight_rows: list[dict] = []
         if "weight_log.json" in names:
             try:
-                weight_rows = json.loads(zf.read(names["weight_log.json"]).decode("utf-8"))
+                weight_rows = json.loads(
+                    zf.read(names["weight_log.json"]).decode("utf-8")
+                )
             except (ValueError, UnicodeDecodeError):
                 weight_rows = []
 
@@ -65,9 +70,17 @@ def read_export(path: Path) -> dict:
         if not day:
             continue
         macros = {
-            "calories": _num(_first(row, ("caloriesTracked", "calories_tracked", "calories", "kcal"))),
-            "protein_g": _num(_first(row, ("proteinTracked", "protein_tracked", "protein", "proteins"))),
-            "carbs_g": _num(_first(row, ("carbsTracked", "carbs_tracked", "carbs", "carbohydrates"))),
+            "calories": _num(
+                _first(row, ("caloriesTracked", "calories_tracked", "calories", "kcal"))
+            ),
+            "protein_g": _num(
+                _first(
+                    row, ("proteinTracked", "protein_tracked", "protein", "proteins")
+                )
+            ),
+            "carbs_g": _num(
+                _first(row, ("carbsTracked", "carbs_tracked", "carbs", "carbohydrates"))
+            ),
             "fat_g": _num(_first(row, ("fatTracked", "fat_tracked", "fat"))),
         }
         macros = {k: v for k, v in macros.items() if v is not None}

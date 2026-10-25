@@ -3054,6 +3054,32 @@ document.querySelectorAll(".nav-btn").forEach((b) => {
     if (details) details.open = false;
   });
 });
+// The "More" menu closes when a click moves outside it, so it never stays
+// over the page after the athlete starts looking at something else.
+document.addEventListener("click", (event) => {
+  document.querySelectorAll("details.nav-more[open]").forEach((details) => {
+    if (!details.contains(event.target)) details.open = false;
+  });
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  document.querySelectorAll("details.nav-more[open]").forEach((details) => {
+    details.open = false;
+    const summary = details.querySelector("summary");
+    if (summary) summary.focus();
+  });
+});
+// Keyboard users: tabbing out of the menu closes it too. Deferred so that a
+// click on a menu entry still lands before the menu disappears.
+document.querySelectorAll("details.nav-more").forEach((details) => {
+  details.addEventListener("focusout", (event) => {
+    if (event.relatedTarget && details.contains(event.relatedTarget)) return;
+    setTimeout(() => {
+      if (!details.contains(document.activeElement)) details.open = false;
+    }, 0);
+  });
+});
+
 document.addEventListener("click", (e) => {
   const target = e.target.closest("[data-goto]");
   if (!target) return;

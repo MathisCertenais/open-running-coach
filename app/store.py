@@ -18,6 +18,14 @@ class Store:
         self._conn.row_factory = sqlite3.Row
         self._init_schema()
 
+    def _ensure_column(self, table: str, column: str, ddl: str) -> None:
+        """Add a column to an existing table (idempotent migration)."""
+        existing = {
+            row[1] for row in self._conn.execute(f"PRAGMA table_info({table})")
+        }
+        if column not in existing:
+            self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
     def _init_schema(self) -> None:
         with self._conn:
             self._conn.execute(
@@ -204,6 +212,9 @@ class Store:
                     created_at         TEXT NOT NULL
                 )
                 """
+            )
+            self._ensure_column(
+                "activity_feedback", "conditions", "TEXT NOT NULL DEFAULT ''"
             )
             self._conn.execute(
                 """
@@ -492,6 +503,7 @@ class Store:
             data.get("pain_trend", "") or "",
             1 if data.get("is_race") else 0,
             json.dumps(data.get("extra") or {}),
+            data.get("conditions", "") or "",
         )
         with self._conn:
             self._conn.execute(
@@ -499,8 +511,9 @@ class Store:
                 INSERT INTO activity_feedback (
                     activity_id, session_type, surface, completed, readiness,
                     sleep_quality, stress, legs, pain, pain_location, pain_side,
-                    pain_severity, pain_timing, pain_trend, is_race, extra
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    pain_severity, pain_timing, pain_trend, is_race, extra,
+                    conditions
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(activity_id) DO UPDATE SET
                     session_type=excluded.session_type,
                     surface=excluded.surface,
@@ -515,6 +528,7 @@ class Store:
                     pain_severity=excluded.pain_severity,
                     pain_timing=excluded.pain_timing,
                     pain_trend=excluded.pain_trend,
+                    conditions=excluded.conditions,
                     is_race=excluded.is_race,
                     extra=excluded.extra
                 """,

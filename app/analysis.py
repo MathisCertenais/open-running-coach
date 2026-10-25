@@ -177,7 +177,14 @@ def _segment_as_activity(activity: Activity, seg: list[TrackPoint]) -> Activity:
 # ---------------------------------------------------------------------------
 # Pace zones
 # ---------------------------------------------------------------------------
-def compute_pace_zones(points: list[TrackPoint]) -> dict:
+def compute_pace_zones(points: list[TrackPoint], use_gap: bool = False) -> dict:
+    """Time and distance per pace zone.
+
+    With ``use_gap``, a step is classified on its grade-adjusted pace rather
+    than its raw pace, so a climb is not scored as an easy effort just because
+    the athlete was moving slowly. Load still uses raw pace: changing that would
+    move every historical training-load number.
+    """
     steps = _steps(points)
     zones = [
         {
@@ -197,6 +204,8 @@ def compute_pace_zones(points: list[TrackPoint]) -> dict:
         if not st["dt_moving"] or st["speed"] is None or st["speed"] <= 0:
             continue
         pace = 1000.0 / st["speed"]  # s/km
+        if use_gap:
+            pace = pace / _gap_factor(st["grade"])
         zi = _zone_index(pace)
         if zi is None:
             continue

@@ -251,6 +251,9 @@ FEEDBACK_PAIN_LOCATIONS = (
     "other",
 )
 FEEDBACK_PAIN_SIDES = ("left", "right", "both")
+# Conditions during the run. Heat is the most common reason a pace that felt
+# hard looks easy on paper.
+FEEDBACK_CONDITIONS = ("", "cool", "temperate", "warm", "hot", "humid")
 FEEDBACK_PAIN_TIMINGS = ("during", "after", "next_morning", "multiple")
 FEEDBACK_PAIN_TRENDS = ("better", "same", "worse")
 FEEDBACK_SCALE_MIN = 1
@@ -401,3 +404,24 @@ INJURY_SESSION_MIN_RPE = 7
 # watcher and keep the manual reload button only. Ten seconds is imperceptible
 # for a sync tool and costs one directory stat per folder.
 DATA_WATCH_SECONDS = 10
+
+# ---------------------------------------------------------------------------
+# Load interpretation
+# ---------------------------------------------------------------------------
+# Session-RPE load and pace-based load are different scales. A ratio outside
+# this band means the athlete found the session much harder (or easier) than the
+# pace alone suggests: heat, fatigue, illness, or a bad day.
+LOAD_DIVERGENCE_LOW = 0.7
+LOAD_DIVERGENCE_HIGH = 1.4
+# Ignore trivial sessions, where the ratio is meaningless.
+LOAD_DIVERGENCE_MIN_LOAD = 15.0
+
+# Rough load weight per running workout type, used only to project a plan:
+# session load = duration_min x weight. Ordered like the pace-zone weights.
+WORKOUT_LOAD_WEIGHTS = {
+    "recovery": 1.0,
+    "easy": 2.0,
+    "long_run": 2.0,
+    "tempo": 4.0,
+    "intervals": 5.0,
+}

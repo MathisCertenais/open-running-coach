@@ -540,3 +540,53 @@ def test_plan_names_its_goal():
 
     assert "marathon" in plan["goal_description"].lower()
     assert plan["name"] == "Training plan"
+
+
+# ---------------------------------------------------------------------------
+# Load divergence and plan projection
+# ---------------------------------------------------------------------------
+def test_divergence_flags_a_run_that_felt_harder_than_the_pace():
+    activity = daily_activity(at(TODAY), activity_id="hard-feeling")
+
+    flagged = coaching.load_divergence([activity], {"hard-feeling": 10})
+
+    assert len(flagged) == 1
+    assert flagged[0]["direction"] == "harder"
+    assert flagged[0]["ratio"] > 1.4
+
+
+def test_divergence_ignores_a_run_that_matches_its_pace():
+    activity = daily_activity(at(TODAY), activity_id="honest")
+
+    # A 60-minute tempo run carries a pace load of about 180: RPE 3 matches it.
+    assert coaching.load_divergence([activity], {"honest": 3}) == []
+
+
+def test_divergence_ignores_runs_without_rpe():
+    activity = daily_activity(at(TODAY), activity_id="no-rpe")
+
+    assert coaching.load_divergence([activity], {}) == []
+
+
+def test_projection_raises_chronic_load_through_a_plan():
+    plan = make_plan()
+
+    projection = coaching.project_plan(plan, 20.0)
+
+    assert len(projection["weeks"]) == plan["weeks"]
+    assert projection["start_ctl"] == 20.0
+    assert projection["final_ctl"] > projection["start_ctl"]
+    assert projection["peak_ctl"] >= projection["final_ctl"] - 0.2
+
+
+def test_projection_dips_on_deload_weeks():
+    plan = make_plan()
+
+    weeks = coaching.project_plan(plan, 40.0)["weeks"]
+    builds = [w for w in weeks if w["type"] == "build"]
+    deloads = [w for w in weeks if w["type"] == "deload"]
+
+    assert builds and deloads
+    assert max(w["weekly_load"] for w in builds) > max(
+        w["weekly_load"] for w in deloads
+    )

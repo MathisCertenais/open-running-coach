@@ -117,3 +117,12 @@ def test_profile_reads_survive_repeated_access(store):
 
     for _ in range(5):
         assert store.get_profile()["default_shoe_id"] == "2"
+
+
+def test_feedback_stores_the_conditions(store):
+    store.set_feedback(
+        "activity-1",
+        {"pain": False, "conditions": "hot", "surface": "road"},
+    )
+
+    assert store.get_feedback("activity-1")["conditions"] == "hot"

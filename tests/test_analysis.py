@@ -272,3 +272,31 @@ def test_monthly_stats_skips_activities_without_a_start_time():
     activity = make_activity([TrackPoint(lat=0.0, lon=0.0)])
 
     assert monthly_stats([activity]) == []
+
+
+def test_gap_zones_classify_a_climb_by_effort_not_by_speed():
+    # Flat-equivalent: 340 s/km is an easy Z2 pace. Climbing at that pace at a
+    # 10% grade is really about 262 s/km of effort, i.e. threshold (Z4).
+    points = make_points([(600, speed_for_pace(340))])
+    stepped = []
+    elevation = 0.0
+    step = speed_for_pace(340)
+    for point in points:
+        stepped.append(
+            TrackPoint(
+                lat=point.lat,
+                lon=point.lon,
+                time=point.time,
+                speed=point.speed,
+                ele=elevation,
+            )
+        )
+        elevation += step * 0.10
+
+    raw = compute_pace_zones(points)["zones"]
+    gap = compute_pace_zones(stepped, use_gap=True)["zones"]
+
+    raw_index = max(range(len(raw)), key=lambda i: raw[i]["time_s"])
+    gap_index = max(range(len(gap)), key=lambda i: gap[i]["time_s"])
+    assert raw_index == 1  # easy
+    assert gap_index >= 3  # threshold or harder

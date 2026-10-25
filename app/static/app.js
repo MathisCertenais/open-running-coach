@@ -885,6 +885,19 @@ function renderFitness(load, fitness) {
       <h4 class="chart-title">Daily training load</h4>
       <div class="chart" id="load-bars"></div>
       <p class="muted legend-line"><span class="dot" style="background:#1e90ff"></span> pace-based load · <span class="dot" style="background:#f59e0b"></span> RPE-based load</p>
+      ${
+        (load.divergence || []).length
+          ? `<h4 class="chart-title">Felt harder or easier than the pace</h4>
+             <ul class="divergence-list">${load.divergence
+               .map(
+                 (d) =>
+                   `<li><span class="muted">${fmtDate(d.date)}</span> · ${esc(d.name)} —
+                    RPE ${d.rpe} reads <b>${d.ratio}×</b> the pace estimate
+                    (${d.direction}). Heat, fatigue or illness can all do this.</li>`,
+               )
+               .join("")}</ul>`
+          : ""
+      }
       <h4 class="chart-title">Fitness vs fatigue</h4>
       <div class="chart" id="fitness-chart"></div>
       <p class="muted legend-line"><span class="dot" style="background:#1e90ff"></span> Fitness (CTL) · <span class="dot" style="background:#ef4444"></span> Fatigue (ATL)</p>
@@ -1197,6 +1210,11 @@ function renderPlanDetail(plan) {
     <div class="panel">
       <h3>${esc(plan.name)}</h3>
       <p class="panel-sub">${esc(plan.goal_description)} · ${plan.weeks} weeks · peak ${plan.peak_weekly_min} min/week (${(plan.peak_weekly_min / 60).toFixed(1)} h)</p>
+      ${
+        plan.projection
+          ? `<p class="panel-sub">Projected chronic load: <b>${plan.projection.start_ctl}</b> → <b>${plan.projection.final_ctl}</b> at the end (peak ${plan.projection.peak_ctl}). Estimate from session minutes × type weight, not a promise.</p>`
+          : ""
+      }
       <p class="panel-sub">Strength, mobility and rest sessions are scheduled automatically — see the <b>Planner</b> tab to view, complete or edit them.</p>
       <div class="plan-weeks">${weekCards}</div>
     </div>`;
@@ -2138,6 +2156,7 @@ function toggleNotes() {
 
 const FB_SESSION_TYPES = [["recovery", "Recovery"], ["easy", "Easy"], ["long", "Long run"], ["tempo", "Tempo"], ["intervals", "Intervals"], ["race", "Race"], ["other", "Other"]];
 const FB_SURFACES = [["road", "Road"], ["trail", "Trail"], ["track", "Track"], ["treadmill", "Treadmill"], ["mixed", "Mixed"]];
+const FB_CONDITIONS = [["cool", "Cool"], ["temperate", "Temperate"], ["warm", "Warm"], ["hot", "Hot"], ["humid", "Humid"]];
 const FB_COMPLETION = [["full", "Full"], ["partial", "Partial"], ["aborted", "Aborted"]];
 const FB_LOCATIONS = [["knee", "Knee"], ["shin", "Shin"], ["calf", "Calf"], ["achilles", "Achilles"], ["foot", "Foot"], ["ankle", "Ankle"], ["hip", "Hip"], ["hamstring", "Hamstring"], ["quad", "Quad"], ["back", "Back"], ["other", "Other"]];
 const FB_SIDES = [["left", "Left"], ["right", "Right"], ["both", "Both"]];
@@ -2230,6 +2249,7 @@ function renderFeedbackTab(detail) {
       <div class="fb-grid">
         <div class="fb-field"><span class="fb-label">Session intent</span>${chipGroupHtml("fb-session", FB_SESSION_TYPES, fb.session_type, false, "Session intent")}</div>
         <div class="fb-field"><span class="fb-label">Surface</span>${chipGroupHtml("fb-surface", FB_SURFACES, fb.surface, false, "Surface")}</div>
+        <div class="fb-field"><span class="fb-label">Conditions</span>${chipGroupHtml("fb-conditions", FB_CONDITIONS, fb.conditions, false, "Conditions")}</div>
         <div class="fb-field"><span class="fb-label">Completed as planned?</span>${chipGroupHtml("fb-completed", FB_COMPLETION, fb.completed, false, "Completed as planned")}</div>
         <div class="fb-field"><span class="fb-label">Race / time trial</span>
           <label class="fb-toggle"><input type="checkbox" id="fb-race" ${fb.is_race ? "checked" : ""}> This was a race</label>
@@ -2275,6 +2295,7 @@ async function saveFeedback(activityId) {
   const payload = {
     session_type: chipValue("fb-session"),
     surface: chipValue("fb-surface"),
+    conditions: chipValue("fb-conditions"),
     completed: chipValue("fb-completed"),
     readiness: intVal("fb-readiness"),
     sleep_quality: intVal("fb-sleep"),

@@ -27,6 +27,9 @@ from .config import (
     INTENSITY_ROLLING_DAYS,
     INTENSITY_TARGET,
     INTENSITY_WEEKLY_DAYS,
+    LOAD_DIVERGENCE_HIGH,
+    LOAD_DIVERGENCE_LOW,
+    LOAD_DIVERGENCE_MIN_LOAD,
     PACE_ZONE_WEIGHTS,
     PACE_ZONES,
     PLAN_DEFAULT_SESSIONS,
@@ -50,6 +53,7 @@ from .config import (
     STEPS_SEDENTARY_WARN,
     SUPPORT_LOAD_WEIGHTS,
     WEIGHT_LOSS_WARN_PCT_PER_WEEK,
+    WORKOUT_LOAD_WEIGHTS,
     WORKOUT_PACES,
     WORKOUT_ZONES,
 )
@@ -320,8 +324,13 @@ def acwr_series(
 # ---------------------------------------------------------------------------
 # Intensity distribution (80/20)
 # ---------------------------------------------------------------------------
-def _zone_group_totals(points: list) -> dict:
-    zones = compute_pace_zones(points)["zones"]
+def _zone_group_totals(points: list, use_gap: bool = True) -> dict:
+    """Group zone time into easy / moderate / hard.
+
+    The distribution is computed on grade-adjusted pace: on a hilly run, raw
+    pace puts climbing time in an easier bucket than the effort deserved.
+    """
+    zones = compute_pace_zones(points, use_gap=use_gap)["zones"]
     groups = {name: {"time_s": 0.0, "distance_m": 0.0} for name in INTENSITY_GROUPS}
     for name, cfg in INTENSITY_GROUPS.items():
         for zi in cfg["zones"]:
@@ -331,8 +340,82 @@ def _zone_group_totals(points: list) -> dict:
     return groups
 
 
+def load_divergence(
+    activities: list[Activity], rpe_map: dict[str, int], limit: int = 5
+) -> list[dict]:
+    """Runs where the session felt much harder or easier than the pace implies.
+
+    Session-RPE and pace load are different scales, so only large ratios are
+    reported: they usually mean heat, fatigue, illness, or a session run at the
+    wrong intensity for its purpose.
+    """
+    flagged = []
+    for activity in activities:
+        rpe = rpe_map.get(activity.id)
+        if rpe is None or activity.start_time is None:
+            continue
+        payload = activity_load(activity, rpe)
+        pace_load = payload["pace_load"]
+        if pace_load < LOAD_DIVERGENCE_MIN_LOAD:
+            continue
+        ratio = payload["load"] / pace_load
+        if LOAD_DIVERGENCE_LOW <= ratio <= LOAD_DIVERGENCE_HIGH:
+            continue
+        flagged.append(
+            {
+                "activity_id": activity.id,
+                "name": activity.name,
+                "date": activity.start_time.date().isoformat(),
+                "rpe": rpe,
+                "rpe_load": payload["load"],
+                "pace_load": pace_load,
+                "ratio": round(ratio, 2),
+                "direction": "harder" if ratio > 1 else "easier",
+            }
+        )
+    flagged.sort(key=lambda item: item["date"], reverse=True)
+    return flagged[:limit]
+
+
+def project_plan(plan: dict, start_ctl: float) -> dict:
+    """Project chronic load through a plan, week by week.
+
+    Each session's load is estimated as duration x WORKOUT_LOAD_WEIGHTS[type];
+    the weekly total is spread evenly over seven days and pushed through the
+    same CTL recursion used by the chart, so the projection is consistent with
+    the number the athlete already reads. It is an estimate, not a promise.
+    """
+    ctl = start_ctl
+    weeks = []
+    for week in plan.get("weeks_plan", []):
+        weekly = sum(
+            (session.get("duration_min") or 0)
+            * WORKOUT_LOAD_WEIGHTS.get(session.get("type"), 2.0)
+            for session in week.get("sessions", [])
+        )
+        daily = weekly / 7.0
+        for _ in range(7):
+            ctl += (daily - ctl) / CTL_TAU_DAYS
+        weeks.append(
+            {
+                "week": week.get("week"),
+                "type": week.get("type"),
+                "weekly_load": round(weekly),
+                "projected_ctl": round(ctl, 1),
+            }
+        )
+    peak = max((w["projected_ctl"] for w in weeks), default=round(start_ctl, 1))
+    return {
+        "start_ctl": round(start_ctl, 1),
+        "weeks": weeks,
+        "final_ctl": round(ctl, 1),
+        "peak_ctl": peak,
+        "method": "session minutes x type weight, spread over 7 days, CTL tau 42",
+    }
+
+
 def intensity_distribution(activities: list[Activity]) -> dict:
-    """Time/distance split across easy / moderate / hard, weekly and rolling."""
+    """Time split across easy / moderate / hard (by grade-adjusted pace)."""
 
     def _window(days: int) -> dict:
         now = datetime.now(timezone.utc)

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -20,6 +20,7 @@ from . import activity as activity_mod
 from . import analysis, coach_llm, coaching, injuries
 from . import connectors as connectors_mod
 from . import exercises as exercises_mod
+from . import report as report_mod
 from . import uploads as uploads_mod
 from .config import (
     DATA_DIR,
@@ -29,6 +30,7 @@ from .config import (
     DATA_WORKOUT_DIR,
     DB_PATH,
     FEEDBACK_COMPLETION,
+    FEEDBACK_CONDITIONS,
     FEEDBACK_PAIN_LOCATIONS,
     FEEDBACK_PAIN_SIDES,
     FEEDBACK_PAIN_TIMINGS,
@@ -701,6 +703,7 @@ class FeedbackPayload(BaseModel):
     pain_severity: Optional[int] = None
     pain_timing: str = ""
     pain_trend: str = ""
+    conditions: str = ""
     is_race: bool = False
     rpe: Optional[int] = None
 
@@ -713,6 +716,7 @@ def _check_enum(name: str, value: str, allowed) -> None:
 def _validate_feedback(payload: FeedbackPayload) -> None:
     _check_enum("session_type", payload.session_type, FEEDBACK_SESSION_TYPES)
     _check_enum("surface", payload.surface, FEEDBACK_SURFACES)
+    _check_enum("conditions", payload.conditions, FEEDBACK_CONDITIONS)
     _check_enum("completed", payload.completed, FEEDBACK_COMPLETION)
     _check_enum("pain_location", payload.pain_location, FEEDBACK_PAIN_LOCATIONS)
     _check_enum("pain_side", payload.pain_side, FEEDBACK_PAIN_SIDES)
@@ -1012,11 +1016,14 @@ def _rpe_map() -> dict[str, int]:
 
 @app.get("/api/coaching/load")
 def api_coaching_load() -> dict:
-    series = coaching.full_load_series(_sorted_activities(), _rpe_map())
+    activities = _sorted_activities()
+    rpe_map = _rpe_map()
+    series = coaching.full_load_series(activities, rpe_map)
     return {
         "days": series,
         "zones": coaching.zone_definitions(),
         "current": series[-1] if series else None,
+        "divergence": coaching.load_divergence(activities, rpe_map),
     }
 
 
@@ -1032,7 +1039,9 @@ def api_coaching_acwr() -> dict:
 
 @app.get("/api/coaching/intensity")
 def api_coaching_intensity() -> dict:
-    return coaching.intensity_distribution(_sorted_activities())
+    data = coaching.intensity_distribution(_sorted_activities())
+    data["basis"] = "grade-adjusted pace"
+    return data
 
 
 @app.get("/api/coaching/vo2max")
@@ -1065,8 +1074,10 @@ class PlanPayload(BaseModel):
 
 @app.post("/api/coaching/plans")
 def api_coaching_generate_plan(payload: PlanPayload) -> dict:
+    activities = _sorted_activities()
+    rpe_map = _rpe_map()
     data = coaching.generate_plan(
-        _sorted_activities(),
+        activities,
         name=payload.name,
         goal_distance_m=payload.goal_distance_m,
         goal_date=payload.goal_date,
@@ -1074,6 +1085,10 @@ def api_coaching_generate_plan(payload: PlanPayload) -> dict:
         weekly_target_s=payload.weekly_target_s,
         sessions_per_week=payload.sessions_per_week,
         start_date=payload.start_date,
+    )
+    current = coaching.fitness_series(activities, rpe_map)["current"]
+    data["projection"] = coaching.project_plan(
+        data, current["ctl"] if current else 0.0
     )
     plan_id = store.add_plan(
         data["name"], data["goal_description"], data["weeks"], data
@@ -1166,6 +1181,71 @@ def api_coaching_review(payload: Optional[CoachReviewPayload] = None) -> dict:
     except coach_llm.LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     return {"review": review}
+
+
+# ---------------------------------------------------------------------------
+# Exports
+# ---------------------------------------------------------------------------
+def _report_data() -> dict:
+    """Assemble everything the report renders (see app/report.py)."""
+    activities = _sorted_activities()
+    rpe_map = _rpe_map()
+    dates = {
+        activity.id: activity.start_time.astimezone(timezone.utc).date().isoformat()
+        for activity in activities
+        if activity.start_time
+    }
+    episodes = injuries.build_episodes(store.all_feedback(), dates)
+    linked = injuries.link_sessions_to_episodes(
+        episodes,
+        store.list_sessions(),
+        today=datetime.now(timezone.utc).date(),
+        verdicts=store.injury_verdicts(),
+    )
+
+    totals = {"activities": len(activities)}
+    for activity in activities:
+        stats = activity_mod.compute_stats(activity)
+        for key in ("distance_m", "moving_time_s", "elevation_gain_m"):
+            totals[key] = totals.get(key, 0.0) + stats[key]
+
+    current = coaching.fitness_series(activities, rpe_map)["current"] or {}
+    intensity = coaching.intensity_distribution(activities)["rolling"]["groups"]
+    dated = [a.start_time for a in activities if a.start_time]
+
+    return report_mod.build(
+        {
+            "profile": store.get_profile(),
+            "totals": totals,
+            "window": {
+                "start": min(dated).date().isoformat() if dated else None,
+                "end": max(dated).date().isoformat() if dated else None,
+            },
+            "load": current,
+            "intensity": intensity,
+            "injuries": {**linked, "episodes": episodes},
+            "sessions": store.list_sessions(),
+            "shoes": _shoes_with_mileage(),
+        }
+    )
+
+
+@app.get("/api/export/markdown")
+def api_export_markdown() -> PlainTextResponse:
+    """Download the report as Markdown (for a coach, a physio, or an archive)."""
+    text = report_mod.markdown(_report_data())
+    filename = f"training-report-{datetime.now(timezone.utc).date().isoformat()}.md"
+    return PlainTextResponse(
+        text,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/report")
+def report_page() -> HTMLResponse:
+    """Print-styled report: the browser's Save as PDF produces the document."""
+    return HTMLResponse(report_mod.html(_report_data()))
 
 
 # ---------------------------------------------------------------------------

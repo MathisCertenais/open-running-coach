@@ -4,6 +4,28 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Coach Running</title>
+  <script>
+    // Apply the saved (or system) theme before first paint to avoid a flash.
+    // ?theme=dark|light forces a theme, which makes the choice linkable and
+    // lets automated checks render a specific theme without scripting.
+    (function () {
+      var theme = "light";
+      try {
+        var params = new URLSearchParams(location.search);
+        var forced = params.get("theme");
+        var stored = localStorage.getItem("theme");
+        var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        if (forced === "dark" || forced === "light") {
+          theme = forced;
+        } else {
+          theme = stored || (prefersDark ? "dark" : "light");
+        }
+      } catch (e) {
+        theme = "light";
+      }
+      document.documentElement.dataset.theme = theme;
+    })();
+  </script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%83%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
   <link rel="stylesheet" href="/static/style.css" />
@@ -61,6 +83,7 @@
       <div class="summary-item"><span class="summary-value" id="sum-time">–</span><span class="summary-label">time</span></div>
       <div class="summary-item"><span class="summary-value" id="sum-elevation">–</span><span class="summary-label">elevation</span></div>
     </div>
+    <button class="btn-icon" id="theme-toggle" aria-pressed="false" aria-label="Switch to dark theme" title="Switch theme">🌙</button>
     <button class="btn-icon" id="reload-btn" title="Re-read the data/ folder" aria-label="Reload data">↻</button>
   </header>
 

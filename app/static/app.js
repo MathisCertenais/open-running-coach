@@ -2649,6 +2649,59 @@ document.querySelectorAll("#coaching-tabs .tab-btn").forEach((b) => {
     renderCoachingTab();
   });
 });
+/* --- Theme toggle ------------------------------------------------------- */
+function applyThemeLabel() {
+  const dark = document.documentElement.dataset.theme === "dark";
+  const btn = $("#theme-toggle");
+  if (!btn) return;
+  btn.setAttribute("aria-pressed", dark ? "true" : "false");
+  btn.setAttribute("aria-label", dark ? "Switch to light theme" : "Switch to dark theme");
+  btn.textContent = dark ? "☀️" : "🌙";
+}
+
+function initTheme() {
+  const btn = $("#theme-toggle");
+  if (!btn) return;
+  applyThemeLabel();
+  btn.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem("theme", next);
+    } catch (e) {
+      /* storage may be unavailable (private mode): the theme still applies */
+    }
+    // Drop a forced ?theme=... so the explicit choice wins on reload.
+    try {
+      const params = new URLSearchParams(location.search);
+      if (params.has("theme")) {
+        params.delete("theme");
+        const qs = params.toString();
+        history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
+      }
+    } catch (e) {
+      /* history may be unavailable */
+    }
+    applyThemeLabel();
+  });
+  // Follow the operating system only while the athlete has not chosen a theme.
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  if (media.addEventListener) {
+    media.addEventListener("change", (event) => {
+      let stored = null;
+      try {
+        stored = localStorage.getItem("theme");
+      } catch (e) {
+        stored = null;
+      }
+      if (stored) return;
+      document.documentElement.dataset.theme = event.matches ? "dark" : "light";
+      applyThemeLabel();
+    });
+  }
+}
+
+initTheme();
 initTabs("analysis-tabs", "analysis-tab-body");
 initTabs("coaching-tabs", "coaching-body");
 $("#save-note-btn").addEventListener("click", saveNote);

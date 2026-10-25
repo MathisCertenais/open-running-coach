@@ -329,6 +329,8 @@ uvicorn and probes every API endpoint.
 - `docs/AI_MODELS.md` — model registry (`models.json`) and key handling
 - `docs/DEPLOYMENT.md` — packaging as a standalone local app
 - `docs/SALES_PROPOSAL_B2C.md` / `docs/SALES_PROPOSAL_B2B.md` — product proposals
+- `docs/research/` — cited notes behind every formula (`01`–`09`) and the
+  competitive landscape (`10`)
 
 ## Notes & limitations
 

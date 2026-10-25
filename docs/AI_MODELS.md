@@ -94,6 +94,10 @@ cannot be removed from the UI — edit that file instead.
 - **roles** — `chat` is used today; `edit`/`apply` are reserved for future
   plan-editing features.
 - **temperature**, **maxTokens** — per-model request settings.
+- **tools** — function calling: `true` (default) sends all eleven tool schemas,
+  `false` disables them, and an integer sends only the first N in priority order
+  (`search_activities`, `get_activity`, `best_efforts`, `get_sessions`, …). Small
+  local models are cheaper and more reliable with three: `"tools": 3`.
 - **chatPath** (optional) — defaults to `/chat/completions`; override it if your
   gateway exposes a different path (e.g. `/v1/chat/completions`).
 

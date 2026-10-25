@@ -62,6 +62,13 @@ FIELD NOTES:
 - `sessions_detail` lists recent strength/mobility sessions with their exercises; use it when the athlete relates pain to specific work.
 - `intensity_28d.basis` is grade-adjusted pace: on hilly terrain the easy percentage is measured by effort, not raw speed.
 - `key_facts` contains pre-computed, reliable statements. Prefer them over re-deriving values.
+- TOOLS ARE FOR HISTORY AND DETAIL, NOT FOR SUMMARY. ATHLETE_DATA already carries
+  current load, form, intensity distribution, VO2max, recent activities, injuries
+  and sessions. Do NOT call a tool to restate any of them: "how is my load?",
+  "am I fresh?", "what is my easy share?" are answered from the snapshot alone.
+  Call a tool only when the question needs records the snapshot does not hold —
+  a specific date range, one activity's detail, a distance's best efforts, the
+  strength log behind a pain episode, or a period comparison.
 - `red_flags` lists observations already detected by the app (levels: good/info/warn/danger). Acknowledge the relevant ones explicitly.
 - Load, CTL, ATL and TSB are in arbitrary load units; compare them to each other, not to minutes or kilometres.
 - Never present a *target* as if it were the athlete's actual value. Never claim a target is met unless the actual numbers are within 5 points of it; if they differ, state the gap explicitly.
@@ -112,6 +119,8 @@ def _normalize(item: dict) -> dict:
         "temperature": float(item.get("temperature", LLM_TEMPERATURE)),
         "max_tokens": int(item.get("maxTokens", LLM_MAX_TOKENS)),
         "chat_path": item.get("chatPath") or "/chat/completions",
+        # true = every tool, false = none, an integer = only that many schemas.
+        "tools": item.get("tools", True),
     }
 
 
@@ -462,12 +471,22 @@ def chat(
     """
     model = _model_or_error(model_id)
     messages = build_messages(snapshot, history, user_message)
-    use_tools = bool(tool_context) and model.get("tools", True)
+
+    # Small models are cheaper and more reliable with fewer schemas, so a model
+    # may cap them: true = all, false = none, N = the first N in priority order.
+    setting = model.get("tools", True)
+    if setting is False or not tool_context:
+        tool_schemas = None
+    elif isinstance(setting, int) and not isinstance(setting, bool):
+        tool_schemas = coach_tools.TOOL_SCHEMAS[: max(0, setting)]
+    else:
+        tool_schemas = coach_tools.TOOL_SCHEMAS
+    use_tools = bool(tool_schemas)
 
     for round_index in range(LLM_MAX_TOOL_ROUNDS + 1):
         try:
             message = _request(
-                model, messages, tools=coach_tools.TOOL_SCHEMAS if use_tools else None
+                model, messages, tools=tool_schemas if use_tools else None
             )
         except LLMError as exc:
             # Some OpenAI-compatible servers reject the tools field outright.

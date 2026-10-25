@@ -8,7 +8,11 @@
       "model": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
       "apiBase": "https://albert.api.etalab.gouv.fr/v1",
       "apiKeyEnv": "ALBERT_API_KEY",
-      "roles": ["chat", "edit", "apply"],
+      "roles": [
+        "chat",
+        "edit",
+        "apply"
+      ],
       "temperature": 0.4,
       "maxTokens": 900
     },
@@ -19,7 +23,11 @@
       "model": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
       "apiBase": "https://albert.api.etalab.gouv.fr/v1",
       "apiKeyEnv": "ALBERT_API_KEY",
-      "roles": ["chat", "edit", "apply"],
+      "roles": [
+        "chat",
+        "edit",
+        "apply"
+      ],
       "temperature": 0.4,
       "maxTokens": 900
     },
@@ -30,7 +38,11 @@
       "model": "ilaas/gemma-4-31b",
       "apiBase": "https://ragarenn.eskemm-numerique.fr/sso/ch@t/api",
       "apiKeyEnv": "GEMMA_API_KEY",
-      "roles": ["chat", "edit", "apply"],
+      "roles": [
+        "chat",
+        "edit",
+        "apply"
+      ],
       "temperature": 0.4,
       "maxTokens": 900
     },
@@ -41,9 +53,14 @@
       "model": "qwen2.5:7b-instruct",
       "apiBase": "http://127.0.0.1:11434/v1",
       "apiKeyEnv": "",
-      "roles": ["chat", "edit", "apply"],
+      "roles": [
+        "chat",
+        "edit",
+        "apply"
+      ],
       "temperature": 0.4,
-      "maxTokens": 900
+      "maxTokens": 900,
+      "tools": 3
     }
   ]
 }

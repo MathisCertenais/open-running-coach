@@ -711,6 +711,9 @@ def get_injuries(context: dict, arguments: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
+# Order matters: a model may cap the number of schemas it receives (see
+# models.json 'tools'), and it gets the first N from this list. The three
+# running-core tools come first.
 TOOL_SCHEMAS = [
     {
         "type": "function",

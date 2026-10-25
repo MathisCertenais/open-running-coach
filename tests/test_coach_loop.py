@@ -174,3 +174,28 @@ def test_a_model_can_be_marked_as_not_supporting_tools(monkeypatch):
 
     assert coach_llm.chat({}, [], "q", "test", tool_context=CONTEXT) == "No tools here."
     assert calls[0] is None
+
+
+def test_a_model_can_cap_the_number_of_tool_schemas(monkeypatch):
+    monkeypatch.setattr(
+        coach_llm, "_model_or_error", lambda model_id: {**MODEL, "tools": 3}
+    )
+    calls = []
+
+    def fake_request(model, messages, tools=None):
+        calls.append(tools)
+        return {"content": "Done."}
+
+    monkeypatch.setattr(coach_llm, "_request", fake_request)
+
+    coach_llm.chat({}, [], "q", "test", tool_context=CONTEXT)
+
+    assert len(calls[0]) == 3
+    names = [schema["function"]["name"] for schema in calls[0]]
+    assert names == ["search_activities", "get_activity", "best_efforts"]
+
+
+def test_the_full_schema_set_is_sent_by_default(monkeypatch):
+    _, calls = run_chat(monkeypatch, [{"content": "Hi"}])
+
+    assert len(calls[0]["tools"]) == len(coach_llm.coach_tools.TOOL_SCHEMAS)

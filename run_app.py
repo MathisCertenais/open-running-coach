@@ -4,6 +4,7 @@
 Starts the local server on a free port, opens the default browser, and keeps
 running until you stop it (Ctrl+C). This is also the PyInstaller entry point.
 """
+
 from __future__ import annotations
 
 import socket

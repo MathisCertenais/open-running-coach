@@ -6,6 +6,7 @@ Usage:
     # or
     .venv/bin/uvicorn app.main:app --reload --port 8000
 """
+
 import uvicorn
 
 if __name__ == "__main__":

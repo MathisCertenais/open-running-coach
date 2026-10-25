@@ -50,8 +50,8 @@ _Avoid_: Total time.
 
 **Best Effort**:
 The fastest time an activity contains over one of the reference distances
-(400 m, 1 km, 5 km, 10 km, half marathon, marathon), regardless of where in the
-activity it occurs.
+(400 m, 1 km, 1 mile, 5 km, 10 km, half marathon, marathon), regardless of where
+in the activity it occurs. Measured in moving time.
 _Avoid_: Record, PR.
 
 **Matched Run**:
@@ -77,8 +77,8 @@ compared with a flat one.
 _Avoid_: Adjusted pace, normalised pace.
 
 **Intensity Distribution**:
-The split of training time or distance across the zone groups, compared with a
-polarised target.
+The split of training **time** across the zone groups, compared with the
+polarised target of 80% easy / 10% moderate / 10% hard.
 _Avoid_: Training mix, zone breakdown.
 
 ### Load and form
@@ -131,8 +131,8 @@ _Avoid_: Safe, dangerous, injury.
 ### Performance
 
 **Effective VO2max**:
-An estimate of aerobic capacity inferred from recent race performances rather
-than measured in a laboratory.
+An estimate of aerobic capacity inferred from the athlete's recorded best
+efforts rather than measured in a laboratory.
 _Avoid_: Real VO2max, lab VO2max.
 
 **VDOT**:

@@ -24,7 +24,7 @@ computes your statistics, and displays the route on a map. Drop files into
 
 **Global views**
 - 🔥 **Personal heatmap**: all your routes overlaid
-- 🏆 **Records**: best efforts (400 m → marathon) + repeated routes
+- 🏆 **Records**: best efforts (400 m, 1 km, 1 mile → marathon) + repeated routes
   (matched runs) to track your progression
 - 📈 **Monthly statistics**: distance/time/elevation per month + comparison
 - 🎯 **Goals**: weekly / monthly / yearly, in distance, time or elevation,
@@ -37,8 +37,8 @@ computes your statistics, and displays the route on a map. Drop files into
   Management Chart with "fresh / neutral / fatigued" bands
 - ⚠️ **Injury risk (ACWR)**: Acute:Chronic Workload Ratio (Gabbett 2016) with
   alert bands and trend
-- 🎚️ **Intensity distribution (80/20)**: time/distance in easy / moderate /
-  hard vs the polarized ideal (Seiler 2010)
+- 🎚️ **Intensity distribution (80/10/10)**: time in easy / moderate / hard
+  vs the polarised ideal (Seiler 2010): 80% easy, 10% moderate, 10% hard
 - 🫁 **VO2max & race predictor**: effective VO2max (Daniels VDOT) + race-time
   predictions (Riegel), with predicted-vs-actual comparison
 - 🗓️ **Training plans**: periodized plan generator (race or weekly-volume
@@ -149,7 +149,7 @@ open-running-coach/
 | GET | `/api/coaching/load` | Daily training-load series |
 | GET | `/api/coaching/fitness` | CTL / ATL / Form (TSB) series |
 | GET | `/api/coaching/acwr` | Injury risk (ACWR) series |
-| GET | `/api/coaching/intensity` | 80/20 intensity distribution |
+| GET | `/api/coaching/intensity` | Intensity distribution (80/10/10 target) |
 | GET | `/api/coaching/vo2max` | Effective VO2max + race predictions |
 | GET/POST | `/api/coaching/plans` | List / generate a training plan |
 | GET/DELETE | `/api/coaching/plans/{id}` | Get / delete a training plan |

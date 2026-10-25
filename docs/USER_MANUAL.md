@@ -92,7 +92,8 @@ Open **Coaching**:
 
 - **Load & fitness** — daily load, CTL/ATL/TSB (fitness, fatigue, form).
 - **Injury risk** — ACWR (7-day vs 28-day load) with alert bands.
-- **Intensity (80/20)** — easy / moderate / hard time vs the polarized ideal.
+- **Intensity (80/20)** — easy / moderate / hard time vs the polarised ideal
+  (80% easy, 10% moderate, 10% hard).
 - **VO2max & race** — effective VO2max and predicted race times.
 - **Training plans** — periodized plan generator (race or weekly volume).
 - **Coach** — rule-based insights + optional AI chat.

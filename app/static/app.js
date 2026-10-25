@@ -834,8 +834,9 @@ function renderLoadBars(el, days) {
     const h = (d.load / maxLoad) * plotH;
     const x = padL + i * bw;
     const y = padT + plotH - h;
-    const color = d.has_rpe ? "#f59e0b" : "#1e90ff";
-    svg += `<rect x="${x + 1}" y="${y}" width="${Math.max(1, bw - 2)}" height="${Math.max(0, h)}" fill="${color}" opacity="0.75"><title>${d.date} — ${d.load} (${d.has_rpe ? "RPE" : "pace"})</title></rect>`;
+    const source = d.source || (d.has_rpe ? "rpe" : "pace");
+    const color = source === "rpe" ? "#f59e0b" : source === "mixed" ? "#a855f7" : "#1e90ff";
+    svg += `<rect x="${x + 1}" y="${y}" width="${Math.max(1, bw - 2)}" height="${Math.max(0, h)}" fill="${color}" opacity="0.75"><title>${d.date} — ${d.load} (${source === "mixed" ? "RPE + pace" : source})</title></rect>`;
   });
   const step = Math.max(1, Math.floor(n / 8));
   for (let i = 0; i < n; i += step) {
@@ -945,7 +946,7 @@ function renderAcwr(data) {
           <div class="acwr-seg" style="flex:0.7;background:#ef4444" title="> 1.5 High risk"></div>
           <div class="acwr-marker" style="left:${acwrMarkerLeft(cur.acwr)}%"></div>
         </div>
-        <div class="acwr-scale-labels"><span>&lt; 0.8 undertraining</span><span>0.8–1.3 sweet spot</span><span>1.3–1.5 caution</span><span>&gt; 1.5 high risk</span></div>
+        <div class="acwr-scale-labels"><span>&lt; 0.8 undertraining</span><span>0.8–1.3 sweet spot</span><span>1.3–1.5 caution</span><span>≥ 1.5 high risk</span></div>
       </div>
       <p class="muted" style="margin-top:10px">Acute (7d): <b>${cur.acute}</b> · Chronic (28d): <b>${cur.chronic}</b></p>` : ""}
       <h4 class="chart-title">ACWR over time</h4>
@@ -1540,7 +1541,7 @@ async function loadHomeKpis() {
       kpiCard("Fatigue (ATL)", cur.atl ?? "—", "short-term load", "coaching", "fitness"),
       kpiCard("Form (TSB)", cur.tsb != null ? `${cur.tsb >= 0 ? "+" : ""}${cur.tsb}` : "—", cur.form || "", "coaching", "fitness"),
       kpiCard("Injury risk (ACWR)", a.acwr ?? "—", a.band || "", "coaching", "acwr"),
-      kpiCard("Easy share", g.easy ? `${g.easy.time_pct}%` : "—", "80/20 target 80%", "coaching", "intensity"),
+      kpiCard("Easy share", g.easy ? `${g.easy.time_pct}%` : "—", "80/10/10 target: 80% easy", "coaching", "intensity"),
       kpiCard("VO2max", vo2.effective_vo2max ?? "—", "ml/kg/min", "coaching", "vo2max"),
       kpiCard("Steps (7d avg)", stepsAvg != null ? stepsAvg.toLocaleString() : "—", "add in Fuel", "fuel"),
       kpiCard("Support this week", String(supportCount), "sessions", "planner"),

@@ -5,6 +5,7 @@ matched-route detection, and monthly statistics.
 from __future__ import annotations
 
 from bisect import bisect_left
+from datetime import datetime, timezone
 from typing import Optional
 
 from .activity import compute_stats, is_moving_step, step_distance, step_speed
@@ -392,10 +393,18 @@ def matched_runs(activities: list[Activity]) -> list[list[Activity]]:
     result = []
     for members in groups.values():
         if len(members) >= 2:
-            members.sort(key=lambda a: a.start_time or a.name)
+            members.sort(key=_start_key)
             result.append(members)
-    result.sort(key=lambda g: g[0].start_time, reverse=True)
+    result.sort(key=lambda g: _start_key(g[0]), reverse=True)
     return result
+
+
+def _start_key(activity: Activity) -> datetime:
+    """Sort key that tolerates activities without a start time."""
+    start = activity.start_time
+    if start is None:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    return start if start.tzinfo else start.replace(tzinfo=timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +415,7 @@ def monthly_stats(activities: list[Activity]) -> list[dict]:
     for a in activities:
         if a.start_time is None:
             continue
-        key = a.start_time.strftime("%Y-%m")
+        key = a.start_time.astimezone(timezone.utc).strftime("%Y-%m")
         m = months.setdefault(
             key,
             {

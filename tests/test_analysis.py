@@ -6,7 +6,7 @@ altitude, IDLE samples and long pauses between points.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -15,7 +15,10 @@ from app.analysis import (
     _gap_factor,
     _smooth_altitudes,
     _zone_index,
+    compute_gap,
     compute_pace_zones,
+    matched_runs,
+    monthly_stats,
 )
 from app.config import (
     GAP_DOWNHILL_FACTOR,
@@ -25,7 +28,7 @@ from app.config import (
     PACE_ZONES,
 )
 from app.parsers import TrackPoint
-from tests.builders import START, make_points, speed_for_pace
+from tests.builders import START, make_activity, make_points, speed_for_pace
 
 
 # ---------------------------------------------------------------------------
@@ -162,3 +165,110 @@ def test_moving_step_accepts_a_normal_stride():
     b = TrackPoint(lat=0.0, lon=0.00003, time=START + timedelta(seconds=1), speed=3.0)
 
     assert is_moving_step(a, b) is True
+
+
+def test_moving_step_excludes_a_step_starting_on_an_idle_sample():
+    # OpenTracks marks the moment the athlete stopped: the interval that follows
+    # is the pause, even if the sensor speed is stale.
+    a = TrackPoint(lat=0.0, lon=0.0, time=START, speed=3.0, ptype="IDLE")
+    b = TrackPoint(lat=0.0, lon=0.00003, time=START + timedelta(seconds=1), speed=3.0)
+
+    assert is_moving_step(a, b) is False
+
+
+def test_moving_step_counts_the_step_that_arrives_at_an_idle_sample():
+    a = TrackPoint(lat=0.0, lon=0.0, time=START, speed=3.0)
+    b = TrackPoint(
+        lat=0.0, lon=0.00003, time=START + timedelta(seconds=1), speed=3.0, ptype="IDLE"
+    )
+
+    assert is_moving_step(a, b) is True
+
+
+# ---------------------------------------------------------------------------
+# GAP totals
+# ---------------------------------------------------------------------------
+def _with_elevation(points, elevation):
+    return [
+        TrackPoint(
+            lat=p.lat, lon=p.lon, time=p.time, speed=p.speed, ele=elevation(i, p)
+        )
+        for i, p in enumerate(points)
+    ]
+
+
+def test_compute_gap_reports_a_faster_pace_than_raw_on_a_climb():
+    flat_points = _with_elevation(make_points([(600, 3.0)]), lambda i, p: 0.0)
+    hill_points = _with_elevation(make_points([(600, 3.0)]), lambda i, p: i * 0.5)
+
+    flat = compute_gap(flat_points)
+    hill = compute_gap(hill_points)
+
+    assert flat["avg_grade_pct"] == pytest.approx(0.0, abs=0.1)
+    assert hill["avg_grade_pct"] > 5.0
+    # Grade-adjusted pace is the flat-equivalent pace, so a climb looks faster.
+    assert hill["gap_pace_s_per_km"] < flat["gap_pace_s_per_km"]
+
+
+def test_compute_gap_returns_zeros_without_movement():
+    result = compute_gap([])
+
+    assert result["distance_m"] == 0
+    assert result["gap_pace_s_per_km"] == 0.0
+    assert result["avg_grade_pct"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Matched runs
+# ---------------------------------------------------------------------------
+def test_matched_runs_groups_two_identical_routes():
+    points = make_points([(600, 3.0)])
+    first = make_activity(points, activity_id="first")
+    second = make_activity(points, activity_id="second")
+
+    groups = matched_runs([first, second])
+
+    assert len(groups) == 1
+    assert {a.id for a in groups[0]} == {"first", "second"}
+
+
+def test_matched_runs_tolerates_activities_without_start_time():
+    # AGENTS.md promises every consumer tolerates missing timestamps.
+    points = make_points([(600, 3.0)])
+    timed = make_activity(points, activity_id="timed")
+    untimed = make_activity(
+        [TrackPoint(lat=p.lat, lon=p.lon) for p in points], activity_id="untimed"
+    )
+
+    groups = matched_runs([timed, untimed])
+
+    assert len(groups) == 1
+    assert {a.id for a in groups[0]} == {"timed", "untimed"}
+
+
+def test_matched_runs_ignores_activities_of_different_lengths():
+    short = make_activity(make_points([(300, 3.0)]), activity_id="short")
+    long_run = make_activity(make_points([(3000, 3.0)]), activity_id="long")
+
+    assert matched_runs([short, long_run]) == []
+
+
+# ---------------------------------------------------------------------------
+# Monthly statistics
+# ---------------------------------------------------------------------------
+def test_monthly_stats_buckets_by_utc_month():
+    # 23:30 UTC on 31 March is already April in UTC+2: the bucket must stay March.
+    points = make_points(
+        [(60, 3.0)], start=datetime(2026, 3, 31, 23, 30, tzinfo=timezone.utc)
+    )
+
+    stats = monthly_stats([make_activity(points)])
+
+    assert len(stats) == 1
+    assert stats[0]["month"] == "2026-03"
+
+
+def test_monthly_stats_skips_activities_without_a_start_time():
+    activity = make_activity([TrackPoint(lat=0.0, lon=0.0)])
+
+    assert monthly_stats([activity]) == []

@@ -157,7 +157,7 @@ RACE_DISTANCES = [
 # Plan generation (periodization).
 PLAN_PROGRESSION = 1.10  # +10% weekly volume between weeks
 PLAN_DELOAD_EVERY = 4  # deload every 4th week
-PLAN_DELOAD_FACTOR = 0.6  # deload week = 60% of the projected volume
+PLAN_DELOAD_FACTOR = 0.6  # deload week = 60% of the previous build week
 PLAN_RAMP_START = 0.6  # first week starts at 60% of the peak volume
 PLAN_EASY_FRACTION = 0.80  # 80/20 distribution
 PLAN_HARD_FRACTION = 0.20

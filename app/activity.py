@@ -68,8 +68,16 @@ def step_speed(a: TrackPoint, b: TrackPoint) -> float:
 
 
 def is_moving_step(a: TrackPoint, b: TrackPoint) -> bool:
-    """True if the step between two points counts as moving time."""
+    """True if the step between two points counts as moving time.
+
+    A step is not moving when it starts on an ``IDLE`` sample. OpenTracks emits
+    an isolated IDLE point at the moment the athlete stops, so the interval
+    between that point and the next one is the pause itself; the interval that
+    arrived at the IDLE point is still real movement and is counted.
+    """
     if a.time is None or b.time is None:
+        return False
+    if a.ptype == "IDLE":
         return False
     dt = (b.time - a.time).total_seconds()
     if not (0 < dt <= MAX_MOVING_GAP):

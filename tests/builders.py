@@ -16,7 +16,10 @@ from app.parsers import Activity, TrackPoint
 # Arbitrary starting point (Paris); the location itself is irrelevant.
 LAT0 = 48.8566
 LON0 = 2.3522
-M_PER_DEG_LAT = 111_320.0
+EARTH_RADIUS_M = 6_371_000.0
+# Metres per degree of latitude, using the same sphere as ``haversine`` in
+# app/activity.py, so generated positions measure back to the intended distance.
+M_PER_DEG_LAT = 2 * math.pi * EARTH_RADIUS_M / 360
 
 # A fixed reference date so tests never depend on the wall clock.
 START = datetime(2026, 3, 1, 8, 0, tzinfo=timezone.utc)

@@ -109,28 +109,53 @@ def _activity_date(activity: Activity) -> Optional[date]:
 def daily_load_map(
     activities: list[Activity], rpe_map: dict[str, int]
 ) -> dict[date, dict]:
-    """Aggregate activities into a per-day load map (UTC date of start time)."""
+    """Aggregate activities into a per-day load map (UTC date of start time).
+
+    Each bucket counts how many activities contributed load from RPE versus from
+    pace, so the caller can label the day without guessing.
+    """
     daily: dict[date, dict] = {}
     for a in activities:
         d = _activity_date(a)
         if d is None:
             continue
         ld = activity_load(a, rpe_map.get(a.id))
-        bucket = daily.setdefault(d, {"load": 0.0, "activities": 0, "rpe_count": 0})
+        bucket = daily.setdefault(
+            d, {"load": 0.0, "activities": 0, "rpe_count": 0, "pace_count": 0}
+        )
         bucket["load"] += ld["load"]
         bucket["activities"] += 1
         if ld["source"] == "rpe":
             bucket["rpe_count"] += 1
+        else:
+            bucket["pace_count"] += 1
     return daily
 
 
-def full_load_series(activities: list[Activity], rpe_map: dict[str, int]) -> list[dict]:
-    """Continuous daily training-load series (zero-filled), first activity → today."""
+def _day_source(bucket: dict) -> str:
+    """Which load source produced a day's total: ``rpe``, ``pace`` or ``mixed``."""
+    has_rpe = bucket["rpe_count"] > 0
+    has_pace = bucket["pace_count"] > 0
+    if has_rpe and has_pace:
+        return "mixed"
+    return "rpe" if has_rpe else "pace"
+
+
+def full_load_series(
+    activities: list[Activity],
+    rpe_map: dict[str, int],
+    today: Optional[date] = None,
+) -> list[dict]:
+    """Continuous daily training-load series (zero-filled), first activity → today.
+
+    ``today`` defaults to the current UTC date; pass it explicitly in tests so
+    the series never depends on the wall clock or on the local time zone.
+    """
     daily = daily_load_map(activities, rpe_map)
     if not daily:
         return []
     start = min(daily)
-    today = date.today()
+    today = today if today is not None else datetime.now(timezone.utc).date()
     end = max(max(daily), today)
 
     series: list[dict] = []
@@ -144,6 +169,7 @@ def full_load_series(activities: list[Activity], rpe_map: dict[str, int]) -> lis
                 "load": round(load, 1),
                 "activities": info["activities"] if info else 0,
                 "has_rpe": (info["rpe_count"] if info else 0) > 0,
+                "source": _day_source(info) if info else None,
             }
         )
         d += timedelta(days=1)
@@ -153,14 +179,18 @@ def full_load_series(activities: list[Activity], rpe_map: dict[str, int]) -> lis
 # ---------------------------------------------------------------------------
 # Fitness / fatigue / form (CTL / ATL / TSB)
 # ---------------------------------------------------------------------------
-def fitness_series(activities: list[Activity], rpe_map: dict[str, int]) -> dict:
+def fitness_series(
+    activities: list[Activity],
+    rpe_map: dict[str, int],
+    today: Optional[date] = None,
+) -> dict:
     """Coggan Performance Management Chart.
 
     CTL_today = CTL_yesterday + (TL - CTL_yesterday) / 42
     ATL_today = ATL_yesterday + (TL - ATL_yesterday) / 7
     Form (TSB) = CTL - ATL
     """
-    series = full_load_series(activities, rpe_map)
+    series = full_load_series(activities, rpe_map, today=today)
     if not series:
         return {"days": [], "current": None}
 
@@ -209,12 +239,16 @@ def _acwr_band(acwr: float) -> str:
     return "unknown"
 
 
-def acwr_series(activities: list[Activity], rpe_map: dict[str, int]) -> dict:
+def acwr_series(
+    activities: list[Activity],
+    rpe_map: dict[str, int],
+    today: Optional[date] = None,
+) -> dict:
     """Acute:Chronic Workload Ratio (Gabbett 2016).
 
     ACWR = (7-day rolling average TL) / (28-day rolling average TL).
     """
-    series = full_load_series(activities, rpe_map)
+    series = full_load_series(activities, rpe_map, today=today)
     if not series:
         return {"days": [], "current": None}
 
@@ -531,7 +565,7 @@ def generate_plan(
     if goal_date:
         try:
             target = datetime.strptime(goal_date, "%Y-%m-%d").date()
-            diff = (target - date.today()).days
+            diff = (target - base_date).days
             if diff > 0:
                 weeks = max(1, min(PLAN_MAX_WEEKS, int(round(diff / 7.0))))
         except ValueError:
@@ -546,18 +580,16 @@ def generate_plan(
             goal_desc = f"Race: {label or (round(goal_distance_m / 1000, 1)) + ' km'}"
 
     # 3. Weekly volume ramp: +10% per week from a 60% start, capped at peak,
-    #    deload every 4th week.
+    #    with every 4th week stepped back to PLAN_DELOAD_FACTOR of the previous
+    #    build week (a deload is a reduction, not a slower increase).
     plan_weeks = []
     current = peak_weekly_min * PLAN_RAMP_START
     for i in range(weeks):
-        projected = current
-        if (i + 1) % PLAN_DELOAD_EVERY == 0:
-            projected = (
-                min(peak_weekly_min, current * PLAN_PROGRESSION) * PLAN_DELOAD_FACTOR
-            )
-        volume = min(peak_weekly_min, projected)
+        is_deload = (i + 1) % PLAN_DELOAD_EVERY == 0
+        if not is_deload and i:
+            current = min(peak_weekly_min, current * PLAN_PROGRESSION)
+        volume = current * PLAN_DELOAD_FACTOR if is_deload else current
         plan_weeks.append(_build_week(i, volume, sessions_per_week))
-        current = min(peak_weekly_min, current * PLAN_PROGRESSION)
 
     # Support sessions with absolute dates. Strength is dropped in the taper
     # (last) week; mobility and rest stay.

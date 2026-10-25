@@ -1,14 +1,13 @@
-"""Tests for the coaching models: load, fitness/fatigue/form, ACWR, intensity.
+"""Tests for the coaching models: load, fitness/fatigue/form, ACWR, intensity,
+VO2max and plan generation.
 
-All assertions are written against the published model or against a property
-that must hold for any correct implementation. Where the current code disagrees
-with the literature, the test says so explicitly and is marked ``xfail`` with a
-reason, so the fix lands as its own commit rather than hidden inside a feature.
+Dates are always passed explicitly (``today=``, ``start_date=``) so the suite
+never depends on the wall clock or on the machine's time zone.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -19,9 +18,21 @@ from app.config import (
     CTL_TAU_DAYS,
     FORM_NEUTRAL_BAND,
     PACE_ZONE_WEIGHTS,
+    PLAN_DELOAD_EVERY,
+    PLAN_DELOAD_FACTOR,
+    PLAN_MAX_SESSIONS,
+    PLAN_MIN_SESSIONS,
+    PLAN_PROGRESSION,
     RIEGEL_EXPONENT,
 )
-from tests.builders import daily_activity, make_points, speed_for_pace
+from tests.builders import daily_activity, make_activity, make_points, speed_for_pace
+
+TODAY = date(2026, 3, 30)
+
+
+def at(day: date, hour: int = 6) -> datetime:
+    """A UTC timestamp on a given day."""
+    return datetime(day.year, day.month, day.day, hour, tzinfo=timezone.utc)
 
 
 def zone_mixed_points():
@@ -79,9 +90,7 @@ def test_pace_load_is_strictly_higher_in_a_faster_zone():
 # Session-RPE
 # ---------------------------------------------------------------------------
 def test_session_rpe_overrides_the_pace_based_load():
-    activity = daily_activity(
-        datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    )
+    activity = daily_activity(at(TODAY))
 
     with_rpe = coaching.activity_load(activity, 5)
     without_rpe = coaching.activity_load(activity, None)
@@ -93,49 +102,101 @@ def test_session_rpe_overrides_the_pace_based_load():
 
 
 def test_activity_load_reports_both_sources_for_transparency():
-    activity = daily_activity(
-        datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    )
-
-    payload = coaching.activity_load(activity, 7)
+    payload = coaching.activity_load(daily_activity(at(TODAY)), 7)
 
     assert payload["rpe"] == 7
     assert payload["duration_min"] == pytest.approx(60.0, abs=0.5)
     assert payload["pace_load"] > 0
 
 
+def test_zero_duration_activity_falls_back_to_pace_load():
+    # An activity with no movement has no session length to multiply by RPE.
+    activity = make_activity([], activity_id="empty")
+
+    payload = coaching.activity_load(activity, 8)
+
+    assert payload["source"] == "pace"
+    assert payload["duration_min"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Daily series and load source labelling
+# ---------------------------------------------------------------------------
+def test_daily_source_is_pace_when_no_rpe_is_logged():
+    activity = daily_activity(at(TODAY))
+
+    series = coaching.full_load_series([activity], {}, today=TODAY)
+
+    assert series[-1]["source"] == "pace"
+    assert series[-1]["has_rpe"] is False
+
+
+def test_daily_source_is_mixed_when_a_day_has_both_kinds():
+    morning = daily_activity(at(TODAY, 6), activity_id="morning")
+    evening = daily_activity(at(TODAY, 18), activity_id="evening")
+
+    series = coaching.full_load_series([morning, evening], {"morning": 5}, today=TODAY)
+
+    assert series[-1]["source"] == "mixed"
+    assert series[-1]["activities"] == 2
+
+
+def test_daily_source_is_null_on_a_rest_day():
+    activity = daily_activity(at(TODAY - timedelta(days=3)))
+
+    series = coaching.full_load_series([activity], {activity.id: 5}, today=TODAY)
+
+    rest_days = [d for d in series if d["activities"] == 0]
+    assert rest_days
+    assert all(d["source"] is None for d in rest_days)
+    assert all(d["load"] == 0 for d in rest_days)
+
+
 # ---------------------------------------------------------------------------
 # CTL / ATL / TSB (Coggan performance management chart)
 # ---------------------------------------------------------------------------
 def test_first_day_uses_the_time_constants_directly():
-    midnight = datetime.now(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    activity = daily_activity(midnight)
+    activity = daily_activity(at(TODAY))
     load = coaching.activity_load(activity, 5)["load"]
 
-    current = coaching.fitness_series([activity], {activity.id: 5})["current"]
+    current = coaching.fitness_series([activity], {activity.id: 5}, today=TODAY)[
+        "current"
+    ]
 
     assert current["ctl"] == pytest.approx(load / CTL_TAU_DAYS, abs=0.2)
     assert current["atl"] == pytest.approx(load / ATL_TAU_DAYS, abs=0.2)
 
 
 def test_constant_load_converges_to_that_load():
-    today = datetime.now(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    activities = [daily_activity(today - _days_ago(n)) for n in range(150)]
-
-    current = coaching.fitness_series(activities, {a.id: 5 for a in activities})[
-        "current"
+    activities = [
+        daily_activity(at(TODAY - timedelta(days=n)), activity_id=f"run-{n}")
+        for n in range(150)
     ]
+
+    current = coaching.fitness_series(
+        activities, {a.id: 5 for a in activities}, today=TODAY
+    )["current"]
 
     # CTL decays at 1/42 per day: after 150 days it is within 3% of the load.
     assert current["ctl"] == pytest.approx(300, rel=0.03)
     assert current["atl"] == pytest.approx(300, rel=0.01)
-    # Equal fitness and fatigue leaves form near zero, slightly negative because
-    # the load is constant rather than tapering.
     assert abs(current["tsb"]) < 15
+
+
+def test_fatigue_drains_faster_than_fitness():
+    activities = [daily_activity(at(TODAY - timedelta(days=10)), activity_id="one")]
+
+    days = coaching.fitness_series(activities, {activities[0].id: 8}, today=TODAY)[
+        "days"
+    ]
+
+    peak = days[0]
+    last = days[-1]
+    # Both decay after the session, but fatigue loses a much larger share of its
+    # peak than fitness does (time constants 7 vs 42 days).
+    assert last["atl"] / peak["atl"] < last["ctl"] / peak["ctl"]
+    assert last["atl"] < peak["atl"]
+    assert last["ctl"] < peak["ctl"]
 
 
 def test_form_band_thresholds():
@@ -177,15 +238,58 @@ def test_acwr_bands_follow_the_configured_thresholds(acwr, expected):
 
 
 def test_acwr_is_empty_before_a_full_chronic_window():
-    today = datetime.now(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    activities = [daily_activity(today - _days_ago(n)) for n in range(3)]
+    activities = [
+        daily_activity(at(TODAY - timedelta(days=n)), activity_id=f"run-{n}")
+        for n in range(3)
+    ]
 
-    series = coaching.acwr_series(activities, {a.id: 5 for a in activities})
+    series = coaching.acwr_series(activities, {}, today=TODAY)
 
     assert series["current"] is None
     assert all(day["band"] == "no_data" for day in series["days"])
+
+
+def test_acwr_is_one_when_the_load_is_constant():
+    activities = [
+        daily_activity(at(TODAY - timedelta(days=n)), activity_id=f"run-{n}")
+        for n in range(40)
+    ]
+
+    current = coaching.acwr_series(
+        activities, {a.id: 5 for a in activities}, today=TODAY
+    )["current"]
+
+    assert current is not None
+    assert current["acwr"] == pytest.approx(1.0, abs=0.02)
+    assert current["band"] == "sweet_spot"
+
+
+def test_acwr_flags_a_sudden_load_increase():
+    # Four quiet weeks, then one hard week: acute load doubles the chronic load.
+    quiet = [
+        daily_activity(
+            at(TODAY - timedelta(days=27 - n)),
+            rpe=5,
+            duration_s=1200,
+            activity_id=f"q{n}",
+        )
+        for n in range(21)
+    ]
+    hard = [
+        daily_activity(
+            at(TODAY - timedelta(days=6 - n)),
+            rpe=5,
+            duration_s=3600,
+            activity_id=f"h{n}",
+        )
+        for n in range(7)
+    ]
+
+    current = coaching.acwr_series(quiet + hard, {}, today=TODAY)["current"]
+
+    assert current is not None
+    assert current["acwr"] == pytest.approx(2.0, abs=0.1)
+    assert current["band"] == "high_risk"
 
 
 # ---------------------------------------------------------------------------
@@ -200,13 +304,36 @@ def test_zone_groups_map_z1_z2_to_easy_z3_to_moderate_and_z4_z6_to_hard():
 
 
 def test_finalize_groups_reports_percentages_that_sum_to_one_hundred():
-    points = zone_mixed_points()
-    result = coaching._finalize_groups(coaching._zone_group_totals(points), 28)
+    result = coaching._finalize_groups(
+        coaching._zone_group_totals(zone_mixed_points()), 28
+    )
 
     total = sum(g["time_pct"] for g in result["groups"].values())
 
     assert total == pytest.approx(100.0, abs=0.2)
     assert result["window_days"] == 28
+
+
+def test_finalize_groups_survives_an_empty_window():
+    empty = {
+        name: {"time_s": 0.0, "distance_m": 0.0}
+        for name in ("easy", "moderate", "hard")
+    }
+
+    result = coaching._finalize_groups(empty, 7)
+
+    assert all(g["time_pct"] == 0.0 for g in result["groups"].values())
+    assert result["total_time_s"] == 0.0
+
+
+def test_intensity_distribution_returns_weekly_and_rolling_windows():
+    points = zone_mixed_points()
+
+    result = coaching.intensity_distribution([make_activity(points)])
+
+    assert result["weekly"]["window_days"] == 7
+    assert result["rolling"]["window_days"] == 28
+    assert set(result["target"]) == {"easy", "moderate", "hard"}
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +351,6 @@ def test_riegel_slows_down_over_longer_distances():
 
     # 20:00 for 5 km predicts about 3h12 for a marathon (Riegel, exponent 1.06).
     assert marathon == pytest.approx(11510, abs=60)
-    # Pace must be slower over the marathon than over the 5 km.
     assert marathon / 42195 > 1200 / 5000
 
 
@@ -249,7 +375,100 @@ def test_vdot_rejects_invalid_input():
     assert coaching._vdot(-1, -1) is None
 
 
-def _days_ago(n: int):
-    from datetime import timedelta
+def test_vo2max_uses_the_best_effort_as_the_seed():
+    # A 5.2 km effort so that a 5 km best effort exists inside it.
+    points = make_points([(1250, speed_for_pace(240))])
+    activity = make_activity(points)
 
-    return timedelta(days=n)
+    result = coaching.vo2max_and_predictions([activity])
+
+    assert result["effective_vo2max"] == pytest.approx(49.8, abs=1.5)
+    assert result["seed"]["distance_m"] == pytest.approx(5000, rel=0.05)
+    labels = [p["label"] for p in result["predictions"]]
+    assert "5K" in labels or "5 km" in labels
+
+
+def test_vo2max_is_empty_without_activities():
+    assert coaching.vo2max_and_predictions([])["effective_vo2max"] is None
+
+
+# ---------------------------------------------------------------------------
+# Plan generation (periodisation)
+# ---------------------------------------------------------------------------
+def make_plan(**kwargs):
+    kwargs.setdefault("weekly_target_s", 36000)  # 600 minutes per week
+    kwargs.setdefault("sessions_per_week", 4)
+    kwargs.setdefault("start_date", "2026-03-02")
+    return coaching.generate_plan([], **kwargs)
+
+
+def test_plan_respects_the_session_count_bounds():
+    plan = make_plan(sessions_per_week=4)
+
+    for week in plan["weeks_plan"]:
+        assert PLAN_MIN_SESSIONS <= len(week["sessions"]) <= PLAN_MAX_SESSIONS
+
+
+def test_plan_clamps_out_of_range_session_counts():
+    assert make_plan(sessions_per_week=1)["sessions_per_week"] == PLAN_MIN_SESSIONS
+    assert make_plan(sessions_per_week=12)["sessions_per_week"] == PLAN_MAX_SESSIONS
+
+
+def test_plan_progresses_by_about_ten_percent_before_a_deload():
+    plan = make_plan()
+    volumes = [w["volume_min"] for w in plan["weeks_plan"]]
+
+    assert volumes[1] / volumes[0] == pytest.approx(PLAN_PROGRESSION, rel=0.05)
+    deload_index = PLAN_DELOAD_EVERY - 1
+    assert plan["weeks_plan"][deload_index]["type"] == "deload"
+    assert volumes[deload_index] < volumes[deload_index - 1]
+
+
+def test_plan_never_exceeds_the_peak_volume():
+    plan = make_plan()
+
+    assert all(w["volume_min"] <= plan["peak_weekly_min"] for w in plan["weeks_plan"])
+
+
+def test_deload_week_matches_the_configured_factor():
+    plan = make_plan()
+    volumes = [w["volume_min"] for w in plan["weeks_plan"]]
+    index = PLAN_DELOAD_EVERY - 1
+
+    assert plan["weeks_plan"][index]["type"] == "deload"
+    # A deload steps back to a fixed fraction of the previous build week.
+    assert volumes[index] / volumes[index - 1] == pytest.approx(
+        PLAN_DELOAD_FACTOR, abs=0.02
+    )
+
+
+def test_plan_length_comes_from_the_goal_date():
+    plan = make_plan(goal_distance_m=21097.5, goal_date="2026-05-25")
+
+    # 2026-03-02 -> 2026-05-25 is exactly 12 weeks.
+    assert plan["weeks"] == 12
+
+
+def test_plan_schedules_support_sessions_with_dates():
+    plan = make_plan()
+
+    assert plan["support_sessions"]
+    assert all("date" in s for s in plan["support_sessions"])
+    assert plan["support_sessions"][0]["date"] == plan["start_date"]
+
+
+def test_taper_week_drops_strength_sessions():
+    plan = make_plan()
+    last_week = plan["weeks"]
+
+    kinds = [s["kind"] for s in plan["support_sessions"] if s["week"] == last_week]
+
+    assert "strength" not in kinds
+    assert kinds  # mobility and rest remain
+
+
+def test_plan_names_its_goal():
+    plan = make_plan(goal_distance_m=42195, goal_date="2026-06-01")
+
+    assert "marathon" in plan["goal_description"].lower()
+    assert plan["name"] == "Training plan"

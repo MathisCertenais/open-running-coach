@@ -3,6 +3,7 @@
 The registry files are redirected to a temporary directory: nothing here may
 touch the repository's models.json, models.local.json or .env.
 """
+
 from __future__ import annotations
 
 import json

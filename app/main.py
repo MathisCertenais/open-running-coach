@@ -1471,7 +1471,7 @@ def api_wger_pull() -> dict:
     """Pull weight, nutrition and strength sessions from wger, once.
 
     This is the only outbound request the app makes on the athlete's behalf and
-    it happens only when they press the button (ADR-0008). It reads, writes the
+    it happens only when they press the button (ADR-0009). It reads, writes the
     usual export files and imports them through the file connectors, so the
     result is identical to dropping the same JSON by hand (ADR-0004).
     """

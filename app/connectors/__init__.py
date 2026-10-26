@@ -88,7 +88,7 @@ def import_wger(
 ) -> dict:
     """Pull wger once, write the exports and import them.
 
-    One request per athlete action, never a poll (ADR-0008). The pull is
+    One request per athlete action, never a poll (ADR-0009). The pull is
     read-only, and the files it writes go through the same connectors as a hand
     dropped export, so the result is replace-or-update, not append (ADR-0004).
     """

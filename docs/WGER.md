@@ -91,4 +91,4 @@ line instead of being guessed.
 The API is versioned (`/api/v2/`) and its schema is published at
 `/api/v2/schema`, so a breaking change surfaces as an error message rather than
 silently partial data. The decision to add this outbound path is recorded in
-[ADR-0008](adr/0008-opt-in-wger-pull.md).
+[ADR-0009](adr/0009-opt-in-wger-pull.md).

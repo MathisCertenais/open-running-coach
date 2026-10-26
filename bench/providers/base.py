@@ -91,6 +91,11 @@ class ModelSpec:
     model: str
     variant: Optional[str] = None
     registry_id: Optional[str] = None
+    # A roster may name its endpoint directly, for a model the app registry
+    # does not carry. Registry entries leave these empty and resolve by id.
+    base_url: Optional[str] = None
+    api_key_env: Optional[str] = None
+    headers: Mapping[str, str] = field(default_factory=dict)
     pricing: Optional[Pricing] = None
     cohort: Literal["production", "proxy"] = "production"
     params: Mapping[str, object] = field(default_factory=dict)
@@ -115,6 +120,8 @@ class ModelSpec:
             "cohort": self.cohort,
             "variant": self.variant,
             "registry_id": self.registry_id,
+            "base_url": self.base_url,
+            "headers": dict(self.headers),
             "params": dict(self.params),
             "enabled": self.enabled,
         }

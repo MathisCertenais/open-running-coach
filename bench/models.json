@@ -36,6 +36,19 @@
       "model": "qwen2.5:7b-instruct",
       "pricing": { "input_per_mtok": 0.0, "output_per_mtok": 0.0 },
       "enabled": true
+    },
+    {
+      "key": "deepseek-v4.1-flash",
+      "label": "DeepSeek V4.1 Flash",
+      "adapter": "openai_http",
+      "origin": "host-d",
+      "cohort": "production",
+      "model": "deepseek-v4.1-flash",
+      "base_url": "https://opencode.ai/zen/go/v1",
+      "api_key_env": "OPENCODE_API_KEY",
+      "headers": { "x-opencode-session": "$uuid", "User-Agent": "open-running-coach/1.0" },
+      "pricing": { "input_per_mtok": 0.15, "output_per_mtok": 0.60 },
+      "enabled": true
     }
   ]
 }

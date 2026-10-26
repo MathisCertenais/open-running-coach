@@ -361,3 +361,164 @@ def test_bench_cli_agent_uses_production_prompt(tmp_path):
         "--",
         "prompt",
     ]
+
+
+# ---------------------------------------------------------------------------
+# Roster-supplied endpoints and request headers
+# ---------------------------------------------------------------------------
+
+
+def _roster_file(tmp_path, headers=None, *, base_url="https://gateway.test/v1"):
+    path = tmp_path / "roster.json"
+    entry = {
+        "key": "roster-only",
+        "label": "Roster Only",
+        "adapter": "openai_http",
+        "origin": "host-x",
+        "cohort": "production",
+        "model": "some-model",
+        "base_url": base_url,
+        "api_key_env": "ROSTER_KEY",
+        "pricing": {"input_per_mtok": 0.15, "output_per_mtok": 0.60},
+        "enabled": True,
+    }
+    if headers is not None:
+        entry["headers"] = headers
+    path.write_text(json.dumps({"prices_as_of": "2026-10-26", "models": [entry]}))
+    return path
+
+
+def test_roster_rejects_an_authorization_header(tmp_path):
+    from bench.roster import load_roster
+
+    path = _roster_file(tmp_path, {"Authorization": "Bearer evil"})
+
+    try:
+        load_roster(path)
+    except ValueError as exc:
+        assert "Authorization" in str(exc)
+    else:  # pragma: no cover - the refusal is the contract
+        raise AssertionError("the roster must refuse an Authorization header")
+
+
+def test_roster_rejects_a_header_injection(tmp_path):
+    from bench.roster import load_roster
+
+    path = _roster_file(tmp_path, {"x-session": "ok\r\nAuthorization: evil"})
+
+    try:
+        load_roster(path)
+    except ValueError as exc:
+        assert "invalid header value" in str(exc)
+    else:  # pragma: no cover - the refusal is the contract
+        raise AssertionError("the roster must refuse CR/LF in a header")
+
+
+def test_roster_only_model_resolves_with_production_settings(tmp_path, monkeypatch):
+    from bench import config
+    from bench.roster import load_roster
+
+    monkeypatch.setenv("ROSTER_KEY", "secret")
+    path = _roster_file(tmp_path, {"x-opencode-session": "$uuid"})
+    spec = load_roster(path).specs[0]
+
+    assert spec.registry_id is None
+    assert spec.base_url == "https://gateway.test/v1"
+    assert spec.headers == {"x-opencode-session": "$uuid"}
+    assert spec.params["roster_only"] is True
+    assert spec.params["temperature"] == 0.4
+    assert spec.params["max_tokens"] == 900
+    assert spec.params["tools"] == len(coach_llm.coach_tools.TOOL_SCHEMAS)
+    assert spec.pricing is not None
+    assert (
+        spec.pricing.cost_usd(
+            __import__("bench.providers.base", fromlist=["Usage"]).Usage(
+                prompt_tokens=1_000_000,
+                completion_tokens=1_000_000,
+                source="provider",
+            )
+        )
+        == 0.75
+    )
+    assert config.PRODUCTION_CHAT_PATH == "/chat/completions"
+
+
+def test_roster_only_model_is_built_from_the_roster(monkeypatch):
+    spec = make_spec(
+        "roster-only",
+        adapter="openai_http",
+        origin="host-x",
+        model="some-model",
+        registry_id=None,
+        base_url="https://gateway.test/v1",
+        api_key_env="ROSTER_KEY",
+        headers={"x-opencode-session": "$uuid"},
+        params={
+            "temperature": 0.4,
+            "max_tokens": 900,
+            "tools": 11,
+            "timeout_s": 60,
+            "roster_only": True,
+        },
+    )
+    monkeypatch.setenv("ROSTER_KEY", "secret")
+    seen = {}
+
+    def fake_run_chat(snapshot, history, user_message, model, tool_context=None):
+        seen.update(model)
+        return coach_llm.ChatTrace(
+            text="ok",
+            tool_calls=(),
+            usage=None,
+            rounds=1,
+            tools_offered=11,
+            tools_dropped=False,
+            finish_reason="stop",
+            context_chars=2,
+            context_truncated=False,
+        )
+
+    monkeypatch.setattr(coach_llm, "run_chat", fake_run_chat)
+    provider = OpenAIHTTPProvider()
+    completion = provider.complete(_request(spec, timeout_s=60.0))
+
+    assert completion.status == Status.OK
+    assert seen["base_url"] == "https://gateway.test/v1"
+    assert seen["chat_path"] == "/chat/completions"
+    assert seen["model"] == "some-model"
+    assert seen["temperature"] == 0.4
+    assert seen["max_tokens"] == 900
+    assert seen["tools"] == 11
+    assert seen["headers"] == {"x-opencode-session": "$uuid"}
+    assert seen["api_key"] == "secret"
+    assert provider.availability(spec).status.value == "ok"
+
+
+def test_a_roster_only_record_carries_its_params():
+    from bench import records
+    from tests.bench_helpers import NOW, make_completion, make_plan
+
+    spec = make_spec(
+        "roster-only",
+        adapter="openai_http",
+        origin="host-x",
+        model="some-model",
+        registry_id=None,
+        base_url="https://gateway.test/v1",
+        params={
+            "temperature": 0.4,
+            "max_tokens": 900,
+            "tools": 11,
+            "timeout_s": 60,
+            "roster_only": True,
+        },
+    )
+    plan = make_plan(models=[spec])
+    record = records.build_record(
+        plan, plan.items[0], make_completion(), NOW, sweep="test"
+    )
+
+    assert record["model"]["params"]["roster_only"] is True
+    assert record["model"]["params"]["temperature"] == 0.4
+    assert record["model"]["params"]["max_tokens"] == 900
+    assert record["model"]["params"]["tools"] == 11

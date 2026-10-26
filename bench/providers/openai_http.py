@@ -16,6 +16,7 @@ athlete's data; it only costs the tokens of the earlier rounds.
 
 from __future__ import annotations
 
+import os
 import random
 import re
 import time
@@ -23,6 +24,7 @@ from typing import Callable, Mapping, Optional
 from urllib.parse import urlparse
 
 from app import coach_llm
+from app.config import LLM_MAX_TOKENS, LLM_TEMPERATURE
 
 from .. import config
 from .base import (
@@ -116,47 +118,79 @@ class OpenAIHTTPProvider:
         return pacing_interval(spec)
 
     def availability(self, spec: ModelSpec) -> Availability:
-        """Report whether the registry id exists and its key is present."""
+        """Report whether this roster line has an endpoint and a key."""
         if not spec.enabled:
             return Availability(
                 AvailabilityStatus.DISABLED,
                 spec.disabled_reason or "disabled in the roster",
             )
-        if not spec.registry_id:
+        if spec.registry_id:
+            model = coach_llm.find_model(spec.registry_id)
+            if model is None:
+                return Availability(
+                    AvailabilityStatus.UNKNOWN_ID,
+                    f"{spec.registry_id!r} is not in models.json",
+                )
+            if not model.get("base_url") or not model.get("model"):
+                return Availability(
+                    AvailabilityStatus.UNKNOWN_ID,
+                    f"{spec.registry_id!r} has no base URL or model",
+                )
+            if model.get("api_key") or _is_local(model["base_url"]):
+                return Availability(AvailabilityStatus.OK)
+            key_name = model.get("api_key_env") or "API key"
             return Availability(
-                AvailabilityStatus.UNKNOWN_ID, "no registry id in the roster"
+                AvailabilityStatus.MISSING_KEY, f"{key_name} is not set"
             )
-        model = coach_llm.find_model(spec.registry_id)
-        if model is None:
+        # A roster-only model: the roster carries the endpoint.
+        if not spec.base_url or not spec.model:
             return Availability(
                 AvailabilityStatus.UNKNOWN_ID,
-                f"{spec.registry_id!r} is not in models.json",
+                "no registry id and no base_url in the roster",
             )
-        if not model.get("base_url") or not model.get("model"):
+        if spec.api_key_env and not os.environ.get(spec.api_key_env):
             return Availability(
-                AvailabilityStatus.UNKNOWN_ID,
-                f"{spec.registry_id!r} has no base URL or model",
+                AvailabilityStatus.MISSING_KEY, f"{spec.api_key_env} is not set"
             )
-        if model.get("api_key") or _is_local(model["base_url"]):
-            return Availability(AvailabilityStatus.OK)
-        key_name = model.get("api_key_env") or "API key"
-        return Availability(AvailabilityStatus.MISSING_KEY, f"{key_name} is not set")
+        return Availability(AvailabilityStatus.OK)
 
     def complete(self, request: Request) -> Completion:
         """Run the production chat loop with retry, pacing and a total budget."""
         started_clock = self._clock()
-        model = coach_llm.find_model(request.model.registry_id or "")
-        if model is None:
+        registry_model = (
+            coach_llm.find_model(request.model.registry_id)
+            if request.model.registry_id
+            else None
+        )
+        if registry_model is not None:
+            # The harness may override the timeout only; every other setting
+            # comes from models.json so the benchmark measures what the app
+            # sends.
+            model = {**registry_model, "headers": dict(request.model.headers)}
+        elif request.model.base_url:
+            # Roster-only model: the app registry does not carry it, so build
+            # the same dict the app would use with its production settings.
+            params = request.model.params
+            model = {
+                "id": request.model.key,
+                "name": request.model.label or request.model.key,
+                "base_url": request.model.base_url,
+                "chat_path": config.PRODUCTION_CHAT_PATH,
+                "model": request.model.model,
+                "temperature": float(params.get("temperature", LLM_TEMPERATURE)),
+                "max_tokens": int(params.get("max_tokens") or LLM_MAX_TOKENS),
+                "tools": params.get("tools", True),
+                "api_key": os.environ.get(request.model.api_key_env or "", ""),
+                "headers": dict(request.model.headers),
+                "timeout_s": request.timeout_s,
+            }
+        else:
             return self._failure(
                 request,
                 started_clock,
                 ErrorKind.NOT_FOUND,
                 f"unknown registry id {request.model.registry_id!r}",
             )
-
-        # The harness may override the timeout only; every other setting comes
-        # from models.json so the benchmark measures what the app sends.
-        model = dict(model)
         key = pacing_key(request.model)
         interval = self._interval_for(request.model)
         pace_waits: list[float] = []

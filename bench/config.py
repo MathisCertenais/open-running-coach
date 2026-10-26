@@ -199,6 +199,10 @@ LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 # ---------------------------------------------------------------------------
 REDACTION_PLACEHOLDER = "[REDACTED]"
 
+# The OpenAI-compatible chat path used when a roster line supplies its own
+# base URL (the app registry supplies the path for registry models).
+PRODUCTION_CHAT_PATH = "/chat/completions"
+
 # ---------------------------------------------------------------------------
 # Retry policy (HTTP adapter only; the runner stays transport-agnostic)
 # ---------------------------------------------------------------------------
@@ -226,10 +230,10 @@ RETRY_MIN_ATTEMPT_TIMEOUT_S = 5.0
 # first: 128000 / 7500 = ~17 calls/min, i.e. 3.52 s. Rounded up to 3.75 s
 # (~16 calls/min) to leave headroom for a larger snapshot.
 PACING_DEFAULT_INTERVAL_S = 0.0
-PACING_INTERVALS: dict[str, float] = {"albert-qwen": 3.75}
+PACING_INTERVALS: dict[str, float] = {"qwen3-coder-30b": 3.75}
 PACING_SNAPSHOT_TOKENS = 7_500
 # Published limits, used by the dry run to show why an interval was chosen and
 # how many calls per minute it allows.
 PACING_BUDGETS: dict[str, dict[str, float]] = {
-    "albert-qwen": {"input_tokens_per_min": 128_000, "requests_per_min": 50},
+    "qwen3-coder-30b": {"input_tokens_per_min": 128_000, "requests_per_min": 50},
 }

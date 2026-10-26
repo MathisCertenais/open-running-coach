@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Iterable, Optional, Sequence
 
 from app import coach_llm, coach_tools
+from app.config import LLM_MAX_TOKENS, LLM_TEMPERATURE
 
 from . import config
 from .providers import ADAPTERS
@@ -40,17 +41,59 @@ def _tool_count(setting: object) -> int:
     return len(coach_tools.TOOL_SCHEMAS)
 
 
-def _production_params(registry_id: str, timeout_s: float) -> dict:
-    model = coach_llm.find_model(registry_id)
-    if model is None:
-        return {"timeout_s": timeout_s}
-    return {
-        "temperature": model["temperature"],
-        "max_tokens": model["max_tokens"],
-        "tools": _tool_count(model.get("tools", True)),
-        "timeout_s": timeout_s,
-        "timeout_overridden": timeout_s != config.DEFAULT_TIMEOUT_S,
-    }
+def _production_params(
+    registry_id: str | None, timeout_s: float, *, roster_only: bool = False
+) -> dict:
+    model = coach_llm.find_model(registry_id) if registry_id else None
+    if model is not None:
+        return {
+            "temperature": model["temperature"],
+            "max_tokens": model["max_tokens"],
+            "tools": _tool_count(model.get("tools", True)),
+            "timeout_s": timeout_s,
+            "timeout_overridden": timeout_s != config.DEFAULT_TIMEOUT_S,
+        }
+    if roster_only:
+        # The model is not in the app registry, so the app's production
+        # defaults are the settings it would get: temperature and max_tokens
+        # from app.config (environment-overridable), every tool schema.
+        return {
+            "temperature": LLM_TEMPERATURE,
+            "max_tokens": LLM_MAX_TOKENS,
+            "tools": _tool_count(True),
+            "timeout_s": timeout_s,
+            "timeout_overridden": timeout_s != config.DEFAULT_TIMEOUT_S,
+            "roster_only": True,
+        }
+    return {"timeout_s": timeout_s}
+
+
+def _headers(raw: object, key: str) -> dict[str, str]:
+    """Parse roster headers, rejecting anything that could smuggle a secret.
+
+    Header names and values cannot contain CR/LF (header injection), and no
+    header may be Authorization: the key is the roster's api_key_env only.
+    Values are literal except ``$uuid``, expanded per request by the transport.
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"{key}: headers must be an object")
+    headers: dict[str, str] = {}
+    for name, value in raw.items():
+        name = str(name).strip()
+        if not name or "\n" in name or "\r" in name:
+            raise ValueError(f"{key}: invalid header name {name!r}")
+        if name.lower() == "authorization":
+            raise ValueError(
+                f"{key}: a roster header may not override Authorization; "
+                "use api_key_env"
+            )
+        text = str(value)
+        if "\n" in text or "\r" in text:
+            raise ValueError(f"{key}: invalid header value for {name!r}")
+        headers[name] = text
+    return headers
 
 
 def _proxy_params(timeout_s: float) -> dict:
@@ -83,8 +126,15 @@ def _spec(entry: dict, timeout_s: float) -> ModelSpec:
         raise ValueError(f"roster entry needs key, origin and model: {entry!r}")
 
     registry_id = entry.get("registry_id")
+    base_url = entry.get("base_url")
     if adapter == "openai_http":
-        params = _production_params(str(registry_id or ""), timeout_s)
+        if not registry_id and not base_url:
+            raise ValueError(f"{entry.get('key')!r} needs a registry_id or a base_url")
+        params = _production_params(
+            str(registry_id) if registry_id else None,
+            timeout_s,
+            roster_only=not registry_id,
+        )
     elif adapter == "opencode_cli":
         params = _proxy_params(timeout_s)
     else:
@@ -104,6 +154,9 @@ def _spec(entry: dict, timeout_s: float) -> ModelSpec:
         cohort=cohort,
         variant=entry.get("variant"),
         registry_id=str(registry_id) if registry_id else None,
+        base_url=str(base_url) if base_url else None,
+        api_key_env=str(entry["api_key_env"]) if entry.get("api_key_env") else None,
+        headers=_headers(entry.get("headers"), str(entry.get("key"))),
         pricing=_pricing(entry.get("pricing")),
         params=params,
         enabled=bool(entry.get("enabled", True)),

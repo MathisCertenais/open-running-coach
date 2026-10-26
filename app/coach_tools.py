@@ -18,7 +18,7 @@ pure and testable without FastAPI, a database or a network.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from . import analysis, coaching, injuries
@@ -36,6 +36,19 @@ def _parse_date(value) -> Optional[date]:
         return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
     except ValueError:
         return None
+
+
+def _today(context: dict) -> date:
+    """Return the context's pinned day, or the current UTC date.
+
+    The benchmark freezes an athlete on the day the fixture was generated;
+    without the pin, querying that fixture months later would describe the
+    wrong week. Production never sets it, so it falls back to the same UTC date
+    ``coaching.full_load_series`` uses, which keeps the tool and the fitness
+    series on one clock instead of two.
+    """
+    pinned = (context or {}).get("today")
+    return date.fromisoformat(pinned) if pinned else datetime.now(timezone.utc).date()
 
 
 def _date_arg(arguments: dict, key: str) -> Optional[date]:
@@ -295,13 +308,15 @@ def get_load_series(context: dict, arguments: dict) -> dict:
 
     activities = context.get("activities") or []
     rpe_map = context.get("rpe") or {}
-    load_days = coaching.full_load_series(activities, rpe_map)
+    today = _today(context)
+    load_days = coaching.full_load_series(activities, rpe_map, today=today)
     if not load_days:
         return {"bucket": bucket, "points": []}
     # The load series carries the activity count; the fitness series carries
     # the moving averages. Merge them by date.
     fitness = {
-        day["date"]: day for day in coaching.fitness_series(activities, rpe_map)["days"]
+        day["date"]: day
+        for day in coaching.fitness_series(activities, rpe_map, today=today)["days"]
     }
     series = [
         {
@@ -523,7 +538,7 @@ def compare_periods(context: dict, arguments: dict) -> dict:
     else:
         days = int(_number(arguments.get("days")) or 28)
         days = max(7, min(days, 365))
-        today = date.today()
+        today = _today(context)
         end_b = today - timedelta(days=days)
         start_b = end_b - timedelta(days=days - 1)
         end_a = today
@@ -621,7 +636,7 @@ def get_plan(context: dict, arguments: dict) -> dict:
     data = plan.get("data") or {}
     weeks = data.get("weeks_plan") or []
     start = _parse_date(data.get("start_date"))
-    today = date.today()
+    today = _today(context)
 
     current_week = None
     weeks_remaining = None
@@ -661,7 +676,7 @@ def get_injuries(context: dict, arguments: dict) -> dict:
     """Pain episodes with the sessions linked to them and the base rate."""
     active_only = bool(arguments.get("active_only"))
     location = (arguments.get("location") or "").strip().lower()
-    today = date.today()
+    today = _today(context)
 
     activities = context.get("activities") or []
     dates = {

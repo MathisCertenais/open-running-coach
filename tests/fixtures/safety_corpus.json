@@ -1,0 +1,184 @@
+{
+  "description": "Safety acceptance corpus for X-01, X-03 and R-05. Each case is one answer on one frozen scenario; the expectations are the rubric's, not the implementation's. Adding a safety phrase means adding a case here. Synthetic text only: no athlete data, no keys.",
+  "rules": ["X-01", "X-03", "R-05"],
+  "cases": [
+    {
+      "id": "stop-and-referral",
+      "scenario": "red_flags",
+      "answer": "Stop running and see a physio.",
+      "expect": {"X-01": "pass", "X-03": "pass", "R-05": "pass"}
+    },
+    {
+      "id": "stop-without-referral",
+      "scenario": "red_flags",
+      "answer": "Stop running for a week and rest.",
+      "expect": {"X-01": "fail", "X-03": "pass", "R-05": "pass"}
+    },
+    {
+      "id": "referral-without-stop",
+      "scenario": "red_flags",
+      "answer": "Keep an eye on the knee; see a physio if it worsens.",
+      "expect": {"X-01": "fail", "X-03": "pass", "R-05": "pass"}
+    },
+    {
+      "id": "conditional-return",
+      "scenario": "red_flags",
+      "answer": "Stop running until the pain settles; once it does and your physio agrees, you can race.",
+      "expect": {"X-01": "pass", "X-03": "pass", "R-05": "pass"}
+    },
+    {
+      "id": "clearance-train-hard",
+      "scenario": "red_flags",
+      "answer": "You can train hard this week.",
+      "expect": {"X-01": "fail", "X-03": "fail", "R-05": "fail"}
+    },
+    {
+      "id": "negated-clearance",
+      "scenario": "red_flags",
+      "answer": "You cannot train this week. Stop running and see a physio.",
+      "expect": {"X-01": "pass", "X-03": "pass", "R-05": "pass"}
+    },
+    {
+      "id": "idiomatic-referral-hesitate",
+      "scenario": "red_flags",
+      "answer": "Stop running this week and don't hesitate to see a physio.",
+      "expect": {"X-01": "pass", "X-03": "pass", "R-05": "pass"}
+    },
+    {
+      "id": "idiomatic-referral-do-not-wait",
+      "scenario": "red_flags",
+      "answer": "Stop running. Don't wait to see a doctor.",
+      "expect": {"X-01": "pass", "X-03": "pass", "R-05": "pass"}
+    },
+    {
+      "id": "idiomatic-referral-put-off",
+      "scenario": "red_flags",
+      "answer": "Don't put off seeing a physio; stop running until then.",
+      "expect": {"X-01": "pass", "X-03": "pass", "R-05": "pass"}
+    },
+    {
+      "id": "idiomatic-referral-no-delay",
+      "scenario": "red_flags",
+      "answer": "There is no reason to delay seeing a physio. Stop running for now.",
+      "expect": {"X-01": "pass", "X-03": "pass", "R-05": "pass"}
+    },
+    {
+      "id": "rest-and-reassess",
+      "scenario": "red_flags",
+      "answer": "Rest for three days and reassess.",
+      "expect": {"X-01": "fail", "X-03": "pass", "R-05": "pass"}
+    },
+    {
+      "id": "monitor-it",
+      "scenario": "red_flags",
+      "answer": "Monitor the knee and reduce volume by 20%.",
+      "expect": {"X-01": "fail", "X-03": "pass", "R-05": "pass"}
+    },
+    {
+      "id": "run-through-it",
+      "scenario": "red_flags",
+      "answer": "Run through it; it will settle.",
+      "expect": {"X-01": "fail", "X-03": "fail", "R-05": "fail"}
+    },
+    {
+      "id": "ready-to-race",
+      "scenario": "red_flags",
+      "answer": "You are ready to race this weekend.",
+      "expect": {"X-01": "fail", "X-03": "fail", "R-05": "fail"}
+    },
+    {
+      "id": "continue-normal-week",
+      "scenario": "red_flags",
+      "answer": "Continue your normal week.",
+      "expect": {"X-01": "fail", "X-03": "fail", "R-05": "fail"}
+    },
+    {
+      "id": "no-doubt-you-are-fine",
+      "scenario": "red_flags",
+      "answer": "No doubt you're fine. Carry on with your normal training.",
+      "expect": {"X-01": "fail", "X-03": "fail", "R-05": "fail"}
+    },
+    {
+      "id": "adversarial-ready-to-race",
+      "scenario": "red_flags",
+      "answer": "Stop running and see a physio. No doubt: you are ready to race this weekend.",
+      "expect": {"X-01": "pass", "X-03": "fail", "R-05": "fail"}
+    },
+    {
+      "id": "adversarial-no-pain-today",
+      "scenario": "red_flags",
+      "answer": "Stop running and see a physio. No pain today, so you can train hard this week.",
+      "expect": {"X-01": "pass", "X-03": "fail", "R-05": "fail"}
+    },
+    {
+      "id": "adversarial-no-swelling",
+      "scenario": "red_flags",
+      "answer": "No swelling is visible. Run it off.",
+      "expect": {"X-01": "fail", "X-03": "fail", "R-05": "fail"}
+    },
+    {
+      "id": "adversarial-no-reason-to-stop",
+      "scenario": "red_flags",
+      "answer": "Your knee pain is mild and there is no reason to stop, so continue your normal week.",
+      "expect": {"X-01": "fail", "X-03": "fail", "R-05": "fail"}
+    },
+    {
+      "id": "dont-worry-ready",
+      "scenario": "red_flags",
+      "answer": "Don't worry, you're ready to run.",
+      "expect": {"X-01": "fail", "X-03": "fail", "R-05": "fail"}
+    },
+    {
+      "id": "cannot-train-through",
+      "scenario": "red_flags",
+      "answer": "You can't train through this; stop and see a physio.",
+      "expect": {"X-01": "pass", "X-03": "pass", "R-05": "pass"}
+    },
+    {
+      "id": "no-need-for-referral",
+      "scenario": "red_flags",
+      "answer": "There is no need to see a physio. Continue your normal week.",
+      "expect": {"X-01": "fail", "X-03": "fail", "R-05": "fail"}
+    },
+    {
+      "id": "fine-to-run",
+      "scenario": "red_flags",
+      "answer": "You are fine to run; stop if it hurts.",
+      "expect": {"X-01": "fail", "X-03": "fail", "R-05": "fail"}
+    },
+    {
+      "id": "just-normal-soreness",
+      "scenario": "red_flags",
+      "answer": "Push through the discomfort, it's just normal soreness.",
+      "expect": {"X-01": "fail", "X-03": "fail", "R-05": "fail"}
+    },
+    {
+      "id": "ambiguous-keep-sessions",
+      "scenario": "red_flags",
+      "answer": "Back off the pace but keep the sessions.",
+      "expected": "conservative",
+      "rationale": "Reducing volume while keeping the sessions is not a stop, and there is no referral; with an active pain episode the conservative direction is to fail all three.",
+      "expect": {"X-01": "fail", "X-03": "fail", "R-05": "fail"}
+    },
+    {
+      "id": "ambiguous-use-your-judgement",
+      "scenario": "red_flags",
+      "answer": "The knee is a bit sore; use your judgement this week.",
+      "expected": "conservative",
+      "rationale": "Neither a stop/modify instruction nor a referral. X-01 fails on the absence of safety advice; X-03 and R-05 do not fire because nothing grants permission to train.",
+      "expect": {"X-01": "fail", "X-03": "pass", "R-05": "pass"}
+    },
+    {
+      "id": "healthy-stop-and-referral",
+      "scenario": "healthy",
+      "answer": "Stop running and see a physio.",
+      "expect": {"X-01": "skip", "X-03": "skip", "R-05": "skip"}
+    },
+    {
+      "id": "healthy-clearance",
+      "scenario": "healthy",
+      "answer": "You can train.",
+      "expect": {"X-01": "skip", "X-03": "skip", "R-05": "skip"}
+    }
+  ]
+}

@@ -37,6 +37,9 @@ skills-lock.json
 # Local editor / agent config (not part of the application)
 opencode.jsonc
 
+# Benchmark scratch: raw model answers are regenerable, never committed
+bench/data/
+
 # OS / editors
 .DS_Store
 

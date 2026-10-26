@@ -13,6 +13,16 @@ from tests.builders import make_activity, make_points, speed_for_pace
 TODAY = date.today()
 
 
+def pinned(**context) -> dict:
+    """A tool context with the clock pinned to ``TODAY``.
+
+    ``_today()`` reads the clock when the context does not carry ``today``, so
+    a test that models "today" as a wall-clock read is flaky across midnight.
+    Every context a clock-reading tool receives names the day explicitly.
+    """
+    return {"today": TODAY.isoformat(), **context}
+
+
 def activity_days_ago(days_ago: int, minutes: float = 60, pace: float = 300):
     start = datetime.combine(
         TODAY - timedelta(days=days_ago), time(8, 0), tzinfo=timezone.utc
@@ -49,7 +59,7 @@ def iso(days_ago: int) -> str:
 # get_load_series
 # ---------------------------------------------------------------------------
 def test_load_series_buckets_by_week():
-    context = {"activities": [activity_days_ago(1), activity_days_ago(3)]}
+    context = pinned(activities=[activity_days_ago(1), activity_days_ago(3)])
 
     result = dispatch("get_load_series", {"days": 14, "bucket": "week"}, context)
 
@@ -60,7 +70,7 @@ def test_load_series_buckets_by_week():
 
 
 def test_load_series_can_return_days():
-    context = {"activities": [activity_days_ago(1)]}
+    context = pinned(activities=[activity_days_ago(1)])
 
     result = dispatch("get_load_series", {"days": 7, "bucket": "day"}, context)
 
@@ -70,8 +80,18 @@ def test_load_series_can_return_days():
     assert result["from_date"] <= result["points"][-1]["date"]
 
 
+def test_load_series_honours_the_pinned_day():
+    """The context's ``today`` wins over the wall clock (the bench pin)."""
+    future = TODAY + timedelta(days=5)
+
+    context = {"today": future.isoformat(), "activities": [activity_days_ago(1)]}
+    result = dispatch("get_load_series", {"days": 30, "bucket": "day"}, context)
+
+    assert result["points"][-1]["date"] == future.isoformat()
+
+
 def test_load_series_carries_the_fitness_average():
-    context = {"activities": [activity_days_ago(1)]}
+    context = pinned(activities=[activity_days_ago(1)])
 
     result = dispatch("get_load_series", {"days": 7, "bucket": "day"}, context)
 
@@ -80,7 +100,7 @@ def test_load_series_carries_the_fitness_average():
 
 
 def test_load_series_caps_the_window():
-    context = {"activities": [activity_days_ago(1)]}
+    context = pinned(activities=[activity_days_ago(1)])
 
     result = dispatch("get_load_series", {"days": 99999}, context)
 
@@ -88,7 +108,7 @@ def test_load_series_caps_the_window():
 
 
 def test_load_series_with_no_activities():
-    result = dispatch("get_load_series", {}, {})
+    result = dispatch("get_load_series", {}, pinned())
 
     assert result["points"] == []
 
@@ -174,13 +194,13 @@ def test_nutrition_caps_the_days_returned():
 # compare_periods
 # ---------------------------------------------------------------------------
 def test_periods_compare_the_last_n_days_with_the_previous_n():
-    context = {
-        "activities": [
+    context = pinned(
+        activities=[
             activity_days_ago(1),
             activity_days_ago(10),
             activity_days_ago(11),
         ]
-    }
+    )
 
     result = dispatch("compare_periods", {"days": 7}, context)
 
@@ -210,9 +230,9 @@ def test_periods_accept_explicit_ranges():
 
 
 def test_periods_report_intensity_and_sessions():
-    context = {
-        "activities": [activity_days_ago(1)],
-        "sessions": [
+    context = pinned(
+        activities=[activity_days_ago(1)],
+        sessions=[
             {
                 "date": iso(1),
                 "kind": "strength",
@@ -221,7 +241,7 @@ def test_periods_report_intensity_and_sessions():
                 "exercises": [],
             }
         ],
-    }
+    )
 
     result = dispatch("compare_periods", {"days": 7}, context)
 
@@ -332,6 +352,7 @@ def plan_context(start_days_ago: int = 14):
         for number in range(1, 5)
     ]
     return {
+        "today": TODAY.isoformat(),
         "plans": [
             {
                 "id": 7,
@@ -344,7 +365,7 @@ def plan_context(start_days_ago: int = 14):
                     "projection": {"start_ctl": 20, "final_ctl": 45, "peak_ctl": 47},
                 },
             }
-        ]
+        ],
     }
 
 
@@ -402,6 +423,7 @@ def injury_context():
     run_day = activity_days_ago(1)
     session_day = (TODAY - timedelta(days=2)).isoformat()
     return {
+        "today": TODAY.isoformat(),
         "activities": [run_day],
         "feedback": {
             run_day.id: {
@@ -464,7 +486,7 @@ def test_injuries_attach_a_verdict_when_one_exists():
 
 
 def test_no_pain_means_no_episodes():
-    result = dispatch("get_injuries", {}, {"activities": [], "feedback": {}})
+    result = dispatch("get_injuries", {}, pinned(activities=[], feedback={}))
 
     assert result["count"] == 0
     assert result["episodes"] == []

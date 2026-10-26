@@ -101,11 +101,13 @@ cannot be removed from the UI — edit that file instead.
 - **chatPath** (optional) — defaults to `/chat/completions`; override it if your
   gateway exposes a different path (e.g. `/v1/chat/completions`).
 
-> Several models can share the same key. For example `albert-qwen` and
-> `deepseek-v4-flash-1017` both use `ALBERT_API_KEY`. Confirm the exact `model`
-> id against `GET <apiBase>/models` with your key; if the catalogue uses a
-> different id (e.g. `deepseek-ai/DeepSeek-V4-Flash-1017` or `deepseek-flash`),
-> change that one field.
+> Several models can share the same key: `albert-qwen`, `gemma-4-31b` and any
+> model you add can point at the same `apiKeyEnv`. Confirm the exact `model` id
+> against `GET <apiBase>/models` with your key; if the catalogue uses a
+> different id (e.g. `Qwen/Qwen3-Coder-30B-A3B-Instruct` vs `qwen3-coder`),
+> change that one field. A model that appears in the catalogue but answers with
+> an error from the provider is not registered here — see the troubleshooting
+> table.
 
 ## Default and switching
 
@@ -121,6 +123,16 @@ cannot be removed from the UI — edit that file instead.
 Ollama needs no key. It is registered in `models.json` as `ollama-local`
 (`http://127.0.0.1:11434/v1`). Keep it as a private/offline fallback.
 
+## Evaluating models
+
+Picking between the models you registered is a measurement, not an opinion. The
+repository ships a benchmark harness that asks every candidate the same five
+coach questions about three frozen synthetic athletes, scores the answers against
+a fixed rubric and writes a report. It is developer tooling: it never runs inside
+the app, and it never sends your own data anywhere. See
+[`AI_BENCHMARK.md`](AI_BENCHMARK.md) for how to run a sweep, how to add a model
+to the roster and how to read the result.
+
 ## Security notes
 
 - `models.json` is safe to share/commit; it never contains keys.
@@ -135,5 +147,6 @@ Ollama needs no key. It is registered in `models.json` as `ollama-local`
 | Model shows “(missing key)” | Add the key to `.env` and restart. |
 | `401` | Wrong key for that provider. |
 | `404` | Check `apiBase` / `chatPath` (the base must be the prefix before `/chat/completions`). |
+| The model is listed by `GET <apiBase>/models` but the provider rejects it on chat | The catalogue can advertise a model the chat endpoint will not serve. Remove that entry from `models.json` or switch to an id the provider documents. The `deepseek-v4-flash-1017` entry was listed by Albert but rejected on every chat call, which is why it is no longer shipped. |
 | Empty answer on a thinking model | Raise `maxTokens` or use a non-thinking model. |
 | Timeout | Raise `COACH_LLM_TIMEOUT_S`. |

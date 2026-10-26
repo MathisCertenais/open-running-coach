@@ -1,0 +1,383 @@
+{
+  "judge_calibration_version": 1,
+  "answers": [
+    {
+      "id": "cal-05-red-flags-intensity",
+      "source": {
+        "record_id": "df427f16c38e4a7a",
+        "model": "opencode-deepseek",
+        "scenario": "red_flags",
+        "prompt_id": "intensity",
+        "tool_calls": 0
+      },
+      "scenario": "red_flags",
+      "prompt_id": "intensity",
+      "question": "How is my 80/20 balance?",
+      "answer": "**Assessment** — Your balance is more conservative than 80/20: over the last 28 days it measures **88.8% easy / 0.0% moderate / 11.2% hard** against a target of 80/10/10. The hard share is essentially on target; the easy share is ~9 points above it and the moderate band is empty.\n\n**What the data says**\n- `intensity_28d`: easy 88.8% (target 80), moderate 0.0% (target 10), hard 11.2% (target 10) — measured on **grade-adjusted pace**, so hilly running counts by effort, not raw speed.\n- Hard work is within ~1 point of target — that part of the plan is fine.\n- The gap is entirely the moderate band: it's not that you're doing too much intensity, it's that you're doing **no tempo/threshold work at all**.\n- Your easy runs look genuinely easy (RPE 2 at ~6:00/km on 10–24 km runs); the harder sessions are the ~4:05/km efforts on Oct 10 and Oct 17 (RPE 5), which is where the 11.2% comes from.\n\n**Interpretation** — This is closer to a *polarised* distribution (~80/0–5/15–20) than to a broken 80/20. For most runners that's a defensible model, so I wouldn't call this a problem to fix urgently. The one thing worth flagging: `divergence` shows 2026-09-16 at RPE 7 with a pace-based load 7× lower than perceived — if sessions like that were logged as easy, your true hard share is **higher** than 11.2%.\n\n**Recommendations** (in priority order)\n1. **Don't add intensity this week.** You have an active right-knee pain episode (severity 6 on Oct 24, trending worse), load ratio 1.6 and week-on-week load +60% — all three are flagged `warn`. Adding a tempo block now is the wrong order of operations.\n2. Once the knee is settled, close the moderate gap with **one tempo session per week** (~20–30 min of comfortably-hard work), swapped in for easy volume rather than stacked on top. That takes you toward 80/10/10 without raising total load.\n3. Or deliberately choose polarised and stop chasing 10% moderate — but then cap hard at ~10–15% and keep the easy days honest, which you're already doing well.\n4. Log RPE on every run so the classification isn't purely pace-based; that's what exposed the Sep 16 divergence.\n\n**Watch-outs**\n- This is a 28-day aggregate on grade-adjusted pace, not a session-by-session audit; a mis-logged session shifts the percentages.\n- The knee is the limiting factor, not the ratio. Pain that is worsening during runs, at severity 6, and persisting across two runs deserves assessment by a qualified medical professional before you progress training. I can't diagnose it.\n- If you do add tempo work while the knee is symptomatic, stop the session if pain changes your gait.",
+      "expected": {
+        "actionability": 5,
+        "specificity": 5,
+        "prioritisation": 5,
+        "honesty": 5,
+        "tone": 5,
+        "weighted": 5.0
+      },
+      "rationale": {
+        "actionability": "One tempo session per week, 20-30 min, swapped for easy volume; stop if gait changes.",
+        "specificity": "Every claim carries a number: 88.8/0.0/11.2, ratio 1.6, +60%, severity 6; numbers drive the decision.",
+        "prioritisation": "Knee first; no intensity this week; tempo only after pain settles.",
+        "honesty": "Names grade-adjusted pace, 28-day aggregate, mis-logged sessions, and cannot diagnose; still recommends.",
+        "tone": "Direct and adult; 'the knee is the limiting factor, not the ratio' is calm, not alarmist."
+      }
+    },
+    {
+      "id": "cal-03-healthy-load-change",
+      "source": {
+        "record_id": "199bfc11f2e10c4d",
+        "model": "gemma-4-31b",
+        "scenario": "healthy",
+        "prompt_id": "load_change",
+        "tool_calls": 0
+      },
+      "scenario": "healthy",
+      "prompt_id": "load_change",
+      "question": "Why did my load change?",
+      "answer": "**Assessment**\nYour load has not changed; it is currently perfectly stable.\n\n**What the data says**\n* **Load Change Ratio:** 1.0 (steady).\n* **Weekly Load:** Your load this week is 580.0, which is identical to your previous week's load of 580.0 (+0% change).\n* **Acute vs. Chronic:** Your 7-day acute load (82.9) is exactly equal to your 28-day chronic load (82.9).\n\n**Recommendations**\nSince your load is steady and your intensity distribution is well-balanced (80.1% easy / 10% moderate / 10% hard), you are in a great position to either:\n1. **Maintain:** Keep this volume if you are feeling good and focusing on consistency.\n2. **Progress:** If you feel ready to increase fitness, you can begin a gradual increase in volume (typically $\\le$10% per week).\n\n**Watch-outs**\nYour current form is flagged as **fatigued** (TSB -11.9). While your load is steady, this suggests you are carrying some accumulated fatigue. Monitor your sleep and recovery before deciding to increase your training volume.",
+      "expected": {
+        "actionability": 3,
+        "specificity": 4,
+        "prioritisation": 3,
+        "honesty": 3,
+        "tone": 4,
+        "weighted": 3.3
+      },
+      "rationale": {
+        "actionability": "Offers maintain or progress, but no session, duration, or pace; athlete must invent.",
+        "specificity": "Most claims anchored (1.0, 580/580, 82.9/82.9); 'great position' is unanchored.",
+        "prioritisation": "Presents a choice, not a decision; no first action.",
+        "honesty": "Generic sleep/recovery caveat; calls TSB 'fatigued' without saying it is not readiness.",
+        "tone": "Clear and adult; slightly stiff."
+      }
+    },
+    {
+      "id": "cal-01-red-flags-ready-10k",
+      "source": {
+        "record_id": "d3fbde9fb629dcc2",
+        "model": "ollama-local",
+        "scenario": "red_flags",
+        "prompt_id": "ready_10k",
+        "tool_calls": 0
+      },
+      "scenario": "red_flags",
+      "prompt_id": "ready_10k",
+      "question": "Am I ready for a 10k?",
+      "answer": "To determine if you're ready for a 10k, let's look at your recent readiness scores and any recurring pain issues. We can also check your current aerobic ceiling to see where you stand in terms of fitness.\n\nFirst, I'll check the average readiness score over the last 10 runs.",
+      "expected": {
+        "actionability": 1,
+        "specificity": 1,
+        "prioritisation": 1,
+        "honesty": 1,
+        "tone": 1,
+        "weighted": 1.0
+      },
+      "rationale": {
+        "actionability": "No recommendation; says it will check readiness and does not.",
+        "specificity": "No claim; no number is used to support anything.",
+        "prioritisation": "No priority; ignores the active pain and the sharp load increase.",
+        "honesty": "Omits the active knee pain and never answers the readiness question.",
+        "tone": "Process narration; ignores the athlete."
+      }
+    }
+  ],
+  "calibration_runs": [
+    {
+      "evaluated_at": "2026-10-26",
+      "judge_prompt_sha256": "9537c192d1129b354a4f8a1d15d39b9cf116c80c3631c4e673a62b56e45e92f9",
+      "max_tokens": 1500,
+      "max_tokens_ceiling": 3000,
+      "reply_attempts": 2,
+      "pacing_s": 4.0,
+      "selection_rule": "Cheapest candidate that passes all three answers within +/-1 on every dimension on its first calibration attempt. All candidates are free on Albert, so total tokens order the tie-break.",
+      "selected": null,
+      "note": "No candidate passed. The gate is not negotiable: no judged run was produced for this sweep.",
+      "results": [
+        {
+          "model": "mistral-small-3-2-24b-instruct-2506",
+          "passed": false,
+          "wall_s": 27.3,
+          "http_calls": 7,
+          "prompt_tokens": 32878,
+          "completion_tokens": 1363,
+          "failures": [
+            "cal-05-red-flags-intensity: actionability scores 5 but its rationale has 3 word(s), under the 4-word floor",
+            "cal-03-healthy-load-change: honesty: judge 5 vs hand 3",
+            "cal-01-red-flags-ready-10k: actionability scores 1 but its rationale has 3 word(s), under the 4-word floor"
+          ]
+        },
+        {
+          "model": "ministral-3-8b-instruct-2512",
+          "passed": false,
+          "wall_s": 44.6,
+          "http_calls": 9,
+          "prompt_tokens": 42176,
+          "completion_tokens": 3114,
+          "failures": [
+            "cal-05-red-flags-intensity: actionability rationale exceeds 25 words",
+            "cal-03-healthy-load-change: quotes.strongest is not a verbatim substring of the answer",
+            "cal-01-red-flags-ready-10k: specificity: judge 3 vs hand 1",
+            "cal-01-red-flags-ready-10k: tone: judge 3 vs hand 1"
+          ]
+        },
+        {
+          "model": "deepseek-v4-flash-0731",
+          "passed": false,
+          "wall_s": 133.4,
+          "http_calls": 10,
+          "prompt_tokens": 47125,
+          "completion_tokens": 2250,
+          "failures": [
+            "cal-01-red-flags-ready-10k: repeats still span >= 2 on tone after a fourth call"
+          ]
+        },
+        {
+          "model": "gpt-oss-120b",
+          "passed": false,
+          "wall_s": 48.2,
+          "http_calls": 10,
+          "prompt_tokens": 47578,
+          "completion_tokens": 2470,
+          "failures": [
+            "cal-03-healthy-load-change: actionability: judge 5 vs hand 3",
+            "cal-03-healthy-load-change: prioritisation: judge 5 vs hand 3",
+            "cal-03-healthy-load-change: honesty: judge 5 vs hand 3",
+            "cal-01-red-flags-ready-10k: LLMError: gpt-oss-120b returned HTTP 429: {\"detail\":\"10 requests per minute exceeded (remaining: 0).\"}"
+          ]
+        }
+      ]
+    },
+    {
+      "evaluated_at": "2026-10-26",
+      "gate": "J2",
+      "judge_model": "deepseek-v4-flash-0731",
+      "judge_prompt_sha256": "9537c192d1129b354a4f8a1d15d39b9cf116c80c3631c4e673a62b56e45e92f9",
+      "max_tokens": 1500,
+      "temperature": 0,
+      "passed": true,
+      "conditions": {
+        "A": true,
+        "B": true,
+        "S": true,
+        "T": true,
+        "U": true,
+        "V": true
+      },
+      "within_one": 14,
+      "total_pairs": 15,
+      "worst_bias": 0.25,
+      "selected": "deepseek-v4-flash-0731",
+      "selection_rule": "Gate J2 (rubric §12.7). Among passers, order by smallest worst-answer signed bias B, then by tokens; all candidates are free on Albert.",
+      "calibration": [
+        {
+          "id": "cal-05-red-flags-intensity",
+          "scenario": "red_flags",
+          "status": "ok",
+          "bias": 0.0,
+          "per_dimension": {
+            "actionability": {
+              "calls": [
+                5,
+                5,
+                5
+              ],
+              "median": 5.0,
+              "hand": 5.0,
+              "error": 0.0,
+              "range": 0
+            },
+            "honesty": {
+              "calls": [
+                5,
+                5,
+                5
+              ],
+              "median": 5.0,
+              "hand": 5.0,
+              "error": 0.0,
+              "range": 0
+            },
+            "prioritisation": {
+              "calls": [
+                5,
+                5,
+                5
+              ],
+              "median": 5.0,
+              "hand": 5.0,
+              "error": 0.0,
+              "range": 0
+            },
+            "specificity": {
+              "calls": [
+                5,
+                5,
+                5
+              ],
+              "median": 5.0,
+              "hand": 5.0,
+              "error": 0.0,
+              "range": 0
+            },
+            "tone": {
+              "calls": [
+                5,
+                5,
+                5
+              ],
+              "median": 5.0,
+              "hand": 5.0,
+              "error": 0.0,
+              "range": 0
+            }
+          }
+        },
+        {
+          "id": "cal-03-healthy-load-change",
+          "scenario": "healthy",
+          "status": "ok",
+          "bias": 0.25,
+          "per_dimension": {
+            "actionability": {
+              "calls": [
+                3,
+                3,
+                3
+              ],
+              "median": 3.0,
+              "hand": 3.0,
+              "error": 0.0,
+              "range": 0
+            },
+            "honesty": {
+              "calls": [
+                4,
+                4,
+                4
+              ],
+              "median": 4.0,
+              "hand": 3.0,
+              "error": 1.0,
+              "range": 0
+            },
+            "prioritisation": {
+              "calls": [
+                3,
+                3,
+                3
+              ],
+              "median": 3.0,
+              "hand": 3.0,
+              "error": 0.0,
+              "range": 0
+            },
+            "specificity": {
+              "calls": [
+                4,
+                4,
+                4
+              ],
+              "median": 4.0,
+              "hand": 4.0,
+              "error": 0.0,
+              "range": 0
+            },
+            "tone": {
+              "calls": [
+                4,
+                4,
+                4
+              ],
+              "median": 4.0,
+              "hand": 4.0,
+              "error": 0.0,
+              "range": 0
+            }
+          }
+        },
+        {
+          "id": "cal-01-red-flags-ready-10k",
+          "scenario": "red_flags",
+          "status": "ok",
+          "bias": 0.2,
+          "per_dimension": {
+            "actionability": {
+              "calls": [
+                1,
+                1,
+                1,
+                1,
+                1
+              ],
+              "median": 1.0,
+              "hand": 1.0,
+              "error": 0.0,
+              "range": 0
+            },
+            "honesty": {
+              "calls": [
+                1,
+                1,
+                1,
+                1,
+                1
+              ],
+              "median": 1.0,
+              "hand": 1.0,
+              "error": 0.0,
+              "range": 0
+            },
+            "prioritisation": {
+              "calls": [
+                1,
+                1,
+                1,
+                1,
+                1
+              ],
+              "median": 1.0,
+              "hand": 1.0,
+              "error": 0.0,
+              "range": 0
+            },
+            "specificity": {
+              "calls": [
+                1,
+                1,
+                1,
+                1,
+                1
+              ],
+              "median": 1.0,
+              "hand": 1.0,
+              "error": 0.0,
+              "range": 0
+            },
+            "tone": {
+              "calls": [
+                3,
+                3,
+                1,
+                3,
+                1
+              ],
+              "median": 3.0,
+              "hand": 1.0,
+              "error": 2.0,
+              "range": 2
+            }
+          }
+        }
+      ],
+      "note": "First certification under Gate J2. The entry above it is kept unchanged with selected: null, so the audit trail shows the gate changed rather than the result."
+    }
+  ]
+}

@@ -24,7 +24,10 @@ file and the code disagree, the code is wrong — except for decisions recorded 
 5. **No magic numbers in logic.** A tunable threshold, weight, distance or
    duration belongs in `app/config.py` with a comment naming its source or
    meaning. Constants that are structurally fixed (earth radius, unit
-   conversions) may stay local if documented.
+   conversions) may stay local if documented. **Dev tooling under `bench/`**
+   keeps its own `bench/config.py` for values that change how a measurement is
+   taken (paths, repeats, caps, timeouts, prices); anything that changes product
+   behaviour still belongs in `app/config.py` and is read, never restated.
 
 ## Python style
 

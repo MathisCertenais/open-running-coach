@@ -1,0 +1,485 @@
+{
+  "meta": {
+    "as_of": "2026-10-26",
+    "generated_at": "2026-10-26T00:21:55.643116Z",
+    "generator_sha256": "565903b57b47295ac7e7bc1efa79b7a9d944dd4c6fb8f2f129a77da153a846ed",
+    "scenario": "healthy",
+    "snapshot_sha256": "bbd0552384c17f1005e1e8cd41cbeb04edc6ee877eff0a161957256c5671c95b",
+    "tool_context_sha256": "72fb1d79465eb196abad30fb3bb775a55c925ac4c312cd4ab65b6f75424226cb",
+    "version": 1
+  },
+  "snapshot": {
+    "acwr": {
+      "acute_load_7d": 82.9,
+      "band": "steady",
+      "chronic_load_28d": 82.9,
+      "ratio": 1.0
+    },
+    "athlete": {
+      "age": 34,
+      "bmi": 22.5,
+      "height_cm": 178.0,
+      "name": "Synthetic Athlete",
+      "weight_kg": 71.4
+    },
+    "best_efforts": [
+      {
+        "distance_m": 400,
+        "label": "400 m",
+        "pace_s_per_km": 245.0,
+        "time_s": 98.0
+      },
+      {
+        "distance_m": 1000,
+        "label": "1 km",
+        "pace_s_per_km": 245.0,
+        "time_s": 245.0
+      },
+      {
+        "distance_m": 1609,
+        "label": "1 mile",
+        "pace_s_per_km": 245.0,
+        "time_s": 394.2
+      },
+      {
+        "distance_m": 5000,
+        "label": "5 km",
+        "pace_s_per_km": 245.0,
+        "time_s": 1225.0
+      },
+      {
+        "distance_m": 10000,
+        "label": "10 km",
+        "pace_s_per_km": 360.0,
+        "time_s": 3600.0
+      }
+    ],
+    "calibration": {
+      "days_required": 42,
+      "in_calibration": false,
+      "meaning": "both averages start at zero; no form band is meaningful yet"
+    },
+    "conditions": {},
+    "divergence": [],
+    "fitness": {
+      "atl": 75.6,
+      "calibrating": false,
+      "ctl": 63.7,
+      "date": "2026-10-26",
+      "form": "fatigued",
+      "form_pct_of_ctl": -18.6,
+      "tsb": -11.9
+    },
+    "generated_at": "2026-10-26T00:21:55.729229+00:00",
+    "goals": [
+      {
+        "current": 32000.0,
+        "metric": "distance",
+        "percent": 80.0,
+        "period": "weekly",
+        "target": 40000.0
+      }
+    ],
+    "injuries": {
+      "base_rate": null,
+      "episodes": [],
+      "links": [],
+      "observed_rate": null,
+      "reading": "not enough history to compare with chance"
+    },
+    "intensity_28d": {
+      "basis": "grade-adjusted pace",
+      "easy_pct": 80.1,
+      "hard_pct": 10.0,
+      "moderate_pct": 10.0,
+      "target_pct": {
+        "easy": 80,
+        "hard": 10,
+        "moderate": 10
+      }
+    },
+    "key_facts": [
+      "Load change 1.0 (steady); 7-day load 82.9, chronic 28-day load 82.9",
+      "Fitness CTL 63.7, fatigue ATL 75.6, form TSB -11.9 (fatigued)",
+      "Intensity last 28 days: 80.1% easy / 10.0% moderate / 10.0% hard (target 80/10/10)",
+      "Load this week 580.0 vs previous week 580.0",
+      "Week-on-week load change: +0%",
+      "Effective VO2max 48.6 ml/kg/min",
+      "Last run 2026-10-26 (0 days ago)",
+      "Daily steps (7-day average): 9750"
+    ],
+    "load": {
+      "days_since_last_run": 0,
+      "last_28d": 2320.0,
+      "last_7d": 580.0,
+      "last_activity_date": "2026-10-26",
+      "prev_7d": 580.0
+    },
+    "load_change": {
+      "band": "steady",
+      "gap_days": 0,
+      "meaning": "describes how fast load is changing; it is not a risk score",
+      "ratio": 1.0
+    },
+    "nutrition": {
+      "appetite_avg": 4.0,
+      "calories_avg_7d": 2430,
+      "carbs_avg_7d": 290,
+      "energy_avg": 4.0,
+      "fat_avg_7d": 75,
+      "fueling_days_7d": 7,
+      "hydration_avg_l": 2.4,
+      "logs_7d": 7,
+      "protein_avg_7d": 130,
+      "steps_avg_7d": 9750.0,
+      "supplements": [
+        {
+          "name": "Vitamin D",
+          "taken_days_7d": 7
+        }
+      ],
+      "weight": {
+        "latest_kg": 71.4,
+        "pct_per_week": 0.21,
+        "window_days": 28
+      }
+    },
+    "recent_activities": [
+      {
+        "completed": null,
+        "date": "2026-10-26",
+        "distance_km": 7.5,
+        "is_race": false,
+        "legs": null,
+        "moving_min": 45.0,
+        "note": "Felt smooth, legs fresh.",
+        "pace_s_per_km": 360.0,
+        "pain": false,
+        "pain_location": null,
+        "pain_severity": null,
+        "pain_side": null,
+        "pain_timing": null,
+        "pain_trend": null,
+        "readiness": null,
+        "rpe": null,
+        "session_type": null,
+        "sleep_quality": null,
+        "stress": null,
+        "surface": null,
+        "type": "running"
+      },
+      {
+        "completed": null,
+        "date": "2026-10-24",
+        "distance_km": 6.12,
+        "is_race": false,
+        "legs": null,
+        "moving_min": 25.0,
+        "note": "",
+        "pace_s_per_km": 245.0,
+        "pain": false,
+        "pain_location": null,
+        "pain_severity": null,
+        "pain_side": null,
+        "pain_timing": null,
+        "pain_trend": null,
+        "readiness": null,
+        "rpe": null,
+        "session_type": null,
+        "sleep_quality": null,
+        "stress": null,
+        "surface": null,
+        "type": "running"
+      },
+      {
+        "completed": null,
+        "date": "2026-10-22",
+        "distance_km": 4.84,
+        "is_race": false,
+        "legs": null,
+        "moving_min": 25.0,
+        "note": "Tempo effort controlled on the flat loop.",
+        "pace_s_per_km": 310.0,
+        "pain": false,
+        "pain_location": null,
+        "pain_severity": null,
+        "pain_side": null,
+        "pain_timing": null,
+        "pain_trend": null,
+        "readiness": null,
+        "rpe": null,
+        "session_type": null,
+        "sleep_quality": null,
+        "stress": null,
+        "surface": null,
+        "type": "running"
+      },
+      {
+        "completed": null,
+        "date": "2026-10-21",
+        "distance_km": 15.0,
+        "is_race": false,
+        "legs": null,
+        "moving_min": 90.0,
+        "note": "",
+        "pace_s_per_km": 360.0,
+        "pain": false,
+        "pain_location": null,
+        "pain_severity": null,
+        "pain_side": null,
+        "pain_timing": null,
+        "pain_trend": null,
+        "readiness": null,
+        "rpe": null,
+        "session_type": null,
+        "sleep_quality": null,
+        "stress": null,
+        "surface": null,
+        "type": "running"
+      },
+      {
+        "completed": null,
+        "date": "2026-10-20",
+        "distance_km": 8.8,
+        "is_race": false,
+        "legs": null,
+        "moving_min": 55.0,
+        "note": "Long run fuelled well, no niggles.",
+        "pace_s_per_km": 375.0,
+        "pain": false,
+        "pain_location": null,
+        "pain_severity": null,
+        "pain_side": null,
+        "pain_timing": null,
+        "pain_trend": null,
+        "readiness": null,
+        "rpe": null,
+        "session_type": null,
+        "sleep_quality": null,
+        "stress": null,
+        "surface": null,
+        "type": "running"
+      },
+      {
+        "completed": null,
+        "date": "2026-10-19",
+        "distance_km": 7.5,
+        "is_race": false,
+        "legs": null,
+        "moving_min": 45.0,
+        "note": "",
+        "pace_s_per_km": 360.0,
+        "pain": false,
+        "pain_location": null,
+        "pain_severity": null,
+        "pain_side": null,
+        "pain_timing": null,
+        "pain_trend": null,
+        "readiness": null,
+        "rpe": null,
+        "session_type": null,
+        "sleep_quality": null,
+        "stress": null,
+        "surface": null,
+        "type": "running"
+      },
+      {
+        "completed": null,
+        "date": "2026-10-17",
+        "distance_km": 6.12,
+        "is_race": false,
+        "legs": null,
+        "moving_min": 25.0,
+        "note": "",
+        "pace_s_per_km": 245.0,
+        "pain": false,
+        "pain_location": null,
+        "pain_severity": null,
+        "pain_side": null,
+        "pain_timing": null,
+        "pain_trend": null,
+        "readiness": null,
+        "rpe": null,
+        "session_type": null,
+        "sleep_quality": null,
+        "stress": null,
+        "surface": null,
+        "type": "running"
+      },
+      {
+        "completed": null,
+        "date": "2026-10-15",
+        "distance_km": 4.84,
+        "is_race": false,
+        "legs": null,
+        "moving_min": 25.0,
+        "note": "",
+        "pace_s_per_km": 310.0,
+        "pain": false,
+        "pain_location": null,
+        "pain_severity": null,
+        "pain_side": null,
+        "pain_timing": null,
+        "pain_trend": null,
+        "readiness": null,
+        "rpe": null,
+        "session_type": null,
+        "sleep_quality": null,
+        "stress": null,
+        "surface": null,
+        "type": "running"
+      },
+      {
+        "completed": null,
+        "date": "2026-10-14",
+        "distance_km": 15.0,
+        "is_race": false,
+        "legs": null,
+        "moving_min": 90.0,
+        "note": "",
+        "pace_s_per_km": 360.0,
+        "pain": false,
+        "pain_location": null,
+        "pain_severity": null,
+        "pain_side": null,
+        "pain_timing": null,
+        "pain_trend": null,
+        "readiness": null,
+        "rpe": null,
+        "session_type": null,
+        "sleep_quality": null,
+        "stress": null,
+        "surface": null,
+        "type": "running"
+      },
+      {
+        "completed": null,
+        "date": "2026-10-13",
+        "distance_km": 8.8,
+        "is_race": false,
+        "legs": null,
+        "moving_min": 55.0,
+        "note": "",
+        "pace_s_per_km": 375.0,
+        "pain": false,
+        "pain_location": null,
+        "pain_severity": null,
+        "pain_side": null,
+        "pain_timing": null,
+        "pain_trend": null,
+        "readiness": null,
+        "rpe": null,
+        "session_type": null,
+        "sleep_quality": null,
+        "stress": null,
+        "surface": null,
+        "type": "running"
+      }
+    ],
+    "red_flags": [
+      {
+        "level": "good",
+        "title": "Load steady"
+      },
+      {
+        "level": "good",
+        "title": "Polarised like a pro"
+      },
+      {
+        "level": "info",
+        "title": "Current aerobic ceiling"
+      }
+    ],
+    "sessions_detail": [
+      {
+        "date": "2026-10-23",
+        "exercises": [
+          "90/90",
+          "Hip flexor stretch"
+        ],
+        "kind": "mobility",
+        "rpe": 2,
+        "title": "Hip mobility"
+      },
+      {
+        "date": "2026-10-19",
+        "exercises": [
+          "Hip thrust",
+          "Calf raise"
+        ],
+        "kind": "strength",
+        "rpe": 6,
+        "title": "Lower body"
+      }
+    ],
+    "shoes": [
+      {
+        "km": 412.0,
+        "name": "Daily trainer",
+        "retired": false,
+        "threshold_km": 800
+      },
+      {
+        "km": 186.0,
+        "name": "Tempo shoe",
+        "retired": false,
+        "threshold_km": 600
+      }
+    ],
+    "support": {
+      "completed_7d": 1,
+      "mobility_7d": 1,
+      "planned_7d": 0,
+      "sessions_28d": 2,
+      "sessions_7d": 1,
+      "strength_7d": 0,
+      "support_load_28d": 152.0,
+      "support_load_7d": 8.0
+    },
+    "vo2max": {
+      "effective": 48.6,
+      "predictions": [
+        {
+          "actual_time_s": 98.0,
+          "label": "400 m",
+          "predicted_time_s": 84.2
+        },
+        {
+          "actual_time_s": 245.0,
+          "label": "1 km",
+          "predicted_time_s": 222.4
+        },
+        {
+          "actual_time_s": 1225.0,
+          "label": "5 km",
+          "predicted_time_s": 1225.0
+        },
+        {
+          "actual_time_s": 3600.0,
+          "label": "10 km",
+          "predicted_time_s": 2554.0
+        },
+        {
+          "actual_time_s": null,
+          "label": "Half marathon",
+          "predicted_time_s": 5635.1
+        },
+        {
+          "actual_time_s": null,
+          "label": "Marathon",
+          "predicted_time_s": 11749.1
+        }
+      ],
+      "seed_label": "5 km"
+    },
+    "wellness": {
+      "legs_avg_10": null,
+      "pain_locations_10": [],
+      "pain_runs_10": 0,
+      "pain_worsening_10": 0,
+      "readiness_avg_10": null,
+      "sleep_avg_10": null,
+      "stress_avg_10": null
+    }
+  }
+}

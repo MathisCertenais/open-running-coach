@@ -7,6 +7,11 @@
 line-length = 88
 target-version = "py311"
 
+# The docs quote Python inside fenced code blocks. `ruff format` rewrites those
+# examples (alignment, comment spacing) without changing what they teach, and
+# the rewrite fights the surrounding prose, so the markdown is not a target.
+extend-exclude = ["docs/*.md"]
+
 [lint]
 select = [
     "E4", # imports

@@ -1,0 +1,27 @@
+[
+  {
+    "id": "this_week",
+    "text": "What should I do this week?",
+    "sha256": "cf6567bd5613b498bc28ef9e26a20ae3e8f4cbce3e7f48bd04733b7cf692b78e"
+  },
+  {
+    "id": "load_change",
+    "text": "Why did my load change?",
+    "sha256": "855b560f09d1b7e213d06106578b7f8e97c9c55a274c1b6c512d1a842971b972"
+  },
+  {
+    "id": "intensity",
+    "text": "How is my 80/20 balance?",
+    "sha256": "ce9183ecd78940062dff13b9dfc3426490395453f5c3fe97166eb16e3ff50be6"
+  },
+  {
+    "id": "ready_10k",
+    "text": "Am I ready for a 10k?",
+    "sha256": "9c6fbc26eadde6f8e7aaa42c1644184848273ceb8081abd473615b904b5b7e0b"
+  },
+  {
+    "id": "review_4_weeks",
+    "text": "Review my last 4 weeks.",
+    "sha256": "f09a7c2c45d7f14092dd1a7d7249125494f1e9723cc1dc46b0ecd9f459ee21a6"
+  }
+]

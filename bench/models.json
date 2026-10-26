@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "prices_as_of": "2026-10-26",
+  "models": [
+    {
+      "key": "gemma-4-31b",
+      "label": "Gemma 4 31B (ragarenn)",
+      "adapter": "openai_http",
+      "origin": "ragarenn",
+      "cohort": "production",
+      "registry_id": "gemma-4-31b",
+      "model": "ilaas/gemma-4-31b",
+      "api_key_env": "GEMMA_API_KEY",
+      "pricing": { "input_per_mtok": 0.0, "output_per_mtok": 0.0 },
+      "enabled": true
+    },
+    {
+      "key": "ollama-local",
+      "label": "Ollama qwen2.5 7B (local)",
+      "adapter": "openai_http",
+      "origin": "ollama",
+      "cohort": "production",
+      "registry_id": "ollama-local",
+      "model": "qwen2.5:7b-instruct",
+      "pricing": { "input_per_mtok": 0.0, "output_per_mtok": 0.0 },
+      "enabled": true
+    },
+    {
+      "key": "albert-qwen",
+      "label": "Albert Qwen3 Coder 30B",
+      "adapter": "openai_http",
+      "origin": "albert",
+      "cohort": "production",
+      "registry_id": "albert-qwen",
+      "model": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+      "api_key_env": "ALBERT_API_KEY",
+      "pricing": null,
+      "enabled": true
+    },
+    {
+      "key": "opencode-deepseek",
+      "label": "DeepSeek V4.1 Flash (opencode CLI)",
+      "adapter": "opencode_cli",
+      "origin": "opencode-go",
+      "cohort": "proxy",
+      "model": "deepseek-v4.1-flash",
+      "pricing": null,
+      "enabled": false,
+      "disabled_reason": "The opencode CLI injects opencode's own agent context around the request. A captured pilot answer contained 'I did not make any tool calls... must be some kind of injection', so the CLI path cannot measure the model: it measures the model plus opencode's wrapper. Use the equivalent OpenAI-compatible endpoint instead: https://opencode.ai/zen/go/v1/chat/completions with an OpenCode Console key (see _example_enabled_openai_http below)."
+    }
+  ],
+  "_example_enabled_openai_http": {
+    "_comment": "Commented example, ignored by the roster loader. Once you have a fresh OpenCode Console key, replace the disabled opencode-deepseek entry above with this object and add an app registry entry with the same registry_id (base_url https://opencode.ai/zen/go/v1, model deepseek-v4.1-flash, api_key_env OPENCODE_API_KEY). Then run: python -m bench.cli providers --roster bench/models.json",
+    "key": "opencode-deepseek",
+    "label": "DeepSeek V4.1 Flash (OpenCode Zen, production path)",
+    "adapter": "openai_http",
+    "origin": "opencode-go",
+    "cohort": "production",
+    "registry_id": "opencode-deepseek",
+    "model": "deepseek-v4.1-flash",
+    "base_url": "https://opencode.ai/zen/go/v1",
+    "api_key_env": "OPENCODE_API_KEY",
+    "pricing": null,
+    "enabled": true
+  }
+}

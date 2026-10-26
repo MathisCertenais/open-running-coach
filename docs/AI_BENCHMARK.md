@@ -40,10 +40,10 @@ choose.
 
 ```bash
 .venv/bin/python -m bench.cli capture --models all --repeats 3 \
-    --sweep full-sweep --judge-model albert/gpt-oss-120b
+    --sweep full-sweep --judge-model deepseek-v4-flash-0731
 ```
 
-Three models × three scenarios × five prompts × three repeats is **135 answers**,
+Four models × three scenarios × five prompts × three repeats is **180 answers**,
 written to `bench/data/sweeps/full-sweep/records.jsonl`. A model with no key is
 skipped and named, not an error. `--judge-model` here is the judge's name in the
 plan: use the same value you pass to `--judge` in step 2, not the provider's model
@@ -143,39 +143,47 @@ production models are reported side by side but never ranked against each other.
 
 ## Current results
 
-Sweep `full-3`: 3 models × 5 prompts × 3 situations × 3 repeats = 135 answers,
-none failed, no retries. Plan hash `72738e1b…`, rubric `2026-10-26`. The judge ran
-on 30 cells (repeat 0, healthy and calibrating) and passed Gate J2.
+Sweep `full-4`: 4 models × 5 prompts × 3 situations × 3 repeats = 180 planned
+answers. Plan hash `0a430282…`, rubric `2026-10-26`. The judge ran on 33 cells
+(repeat 0, healthy and calibrating) and passed Gate J2.
 
 **Read the blocker column first.** It counts answers containing at least one
 blocking error — invented fact, unsafe advice, a claim the literature rules out —
 not the number of errors.
 
-| Model | Answered | Blockers | Blocker rate | Gate pass | Mean coverage | Mean J (n) |
-| --- | --- | --- | --- | --- | --- | --- |
-| gemma-4-31b | 45 | 11 | 24.4 % | 40.0 % | 0.748 | 3.79 (7) |
-| albert-qwen | 45 | 10 | 22.2 % | 44.4 % | 0.759 | 2.90 (2) |
-| ollama-local | 45 | 16 | 35.6 % | 6.7 % | 0.333 | 2.00 (2) |
+| Model | Answered | Blockers | Blocker rate | Blocked prompts (all repeats) | Mean J (n) |
+| --- | --- | --- | --- | --- | --- |
+| Gemma 4 31B | 45 | 6 | 13.3 % | 1 of 5 | 3.85 (5) |
+| DeepSeek V4.1 Flash | 20 | 5 | 25.0 % | 1 of 5 | — (0) |
+| Qwen3 Coder 30B | 45 | 14 | 31.1 % | 3 of 5 | 3.05 (2) |
+| Qwen2.5 7B Instruct | 45 | 16 | 35.6 % | 4 of 5 | — (0) |
 
-**No model is declared better than another, and the reasons are in the report.**
-Every pair fails at least the blocker-rate and dominance conditions; the paired
-sign tests favour gemma over ollama (12–2–1, p = 0.013) and albert over ollama
-(13–2–0, p = 0.007), but a win on paired cells does not override a higher blocker
-rate or a lower coverage. On the red-flag athlete specifically, ollama-local
-produced a blocker on all five prompts (14 of 15 answers, reproducibly) and should
-not be used there; albert-qwen wrote "increases injury risk" from the load ratio,
-which the literature and the app's own prompt forbid.
+**No model is declared better than another.** Gemma 4 31B and Qwen3 Coder 30B are
+"no distinguishable difference": Gemma's blocker rate is lower (13.3 % vs 31.1 %)
+but the intervals overlap and the paired sign test is 7–6–2 (p = 1). Qwen2.5 and
+DeepSeek are *insufficient evidence* — Qwen2.5 has no judged answer that passes
+the deterministic gate (n = 0), and DeepSeek produced only 10 scorable cells
+against a minimum of 15. On the red-flag athlete, Qwen2.5 7B Instruct blocks four
+of five prompts in every repeat and Qwen3 Coder three; Gemma blocks one.
 
-Two caveats belong next to those numbers, not in a footnote:
+DeepSeek V4.1 Flash is a real finding, not a harness fault: at the app's
+900-token output cap it spends the whole completion on hidden reasoning and
+returns no visible text, answering only 20 of 45 prompts. The app would behave
+the same way for an athlete who selected it.
 
-- **The judged sample is small.** J rests on 7 cells for gemma and 2 for each of
-  the others, because only answers that pass the deterministic gate are judged.
-  A difference in mean J below about 1.0 is not a finding, and all four candidate
-  judges we tried erred lenient, so J is an upper bound on quality.
-- **All three models breached the zero-blocker bar.** The honest conclusion is
+Three caveats belong next to those numbers, not in a footnote:
+
+- **The judged sample is small.** J rests on 5 cells for Gemma and 2 for Qwen3
+  Coder, because only answers that pass the deterministic gate are judged. A
+  difference in mean J below about 1.0 is not a finding, and every candidate
+  judge we tried erred lenient, so J is an upper bound on quality.
+- **All four models breached the zero-blocker bar.** The honest conclusion is
   that none is deployable as-is on these five prompts, not that the top row wins.
-  Counts are a floor: two known classes of red-flag answer still slip through
+  Counts are a floor: known classes of red-flag answer still slip through
   (rubric §12.4).
+- **The repeats are not extra sample.** The effective statistical sample is five
+  prompts per model; the report's blocker grid shows which prompts are blocked
+  in all three repeats (reproducible) and which only once (flaky).
 
 ## 4. How to add a model
 
@@ -191,37 +199,32 @@ calls; `bench/models.json` is the roster of models to benchmark.
 3. Run `.venv/bin/python -m bench.cli providers` — the new key should read `ok`
    rather than `missing_key` — then capture again under a new sweep name.
 
-### opencode-go (DeepSeek and other Zen models)
+### A model that is not in the app registry
 
-Do not use the `opencode_cli` adapter: the CLI injects opencode's own agent
-context around the request — one pilot answer complained about "some kind of
-injection" — so it measures the model plus a wrapper. The roster entry is kept
-disabled as a record of that finding.
+DeepSeek V4.1 Flash is benchmarked today, but it is not selectable in the coach
+panel. The harness can run such a model anyway: the roster line carries the whole
+request (`base_url`, `headers`, pricing) and the HTTP adapter builds it with the
+app's production settings — temperature 0.4, 900 output tokens, all tool schemas.
+The report marks it "roster-only" so the reader knows the app does not offer it
+yet. Adding it to the app is the same registry entry described above.
 
-The supported route is the OpenAI-compatible endpoint, added as a normal registry
-entry with an `apiKeyEnv`:
+Do not use the `opencode_cli` adapter: the CLI injects its own agent context
+around the request — one pilot answer complained about "some kind of injection" —
+so it measures the model plus a wrapper. That entry stays disabled as a record of
+the finding.
 
-1. Create an API key in **OpenCode Console** and put it in `.env`:
+### Note on the OpenCode Go endpoint
 
-   ```env
-   OPENCODE_API_KEY=...
-   ```
+Its OpenAI-compatible API needs a routing header on every call
+(`x-opencode-session`, any UUID) and rejects a request without one; it also
+rejects Python's default User-Agent. Both live in the roster entry:
 
-2. Add this entry to the app registry:
+```json
+"headers": { "x-opencode-session": "$uuid", "User-Agent": "open-running-coach/1.0" }
+```
 
-   ```json
-   {"id": "opencode-deepseek", "name": "DeepSeek V4.1 Flash (OpenCode Zen)",
-    "provider": "openai", "model": "deepseek-v4.1-flash",
-    "apiBase": "https://opencode.ai/zen/go/v1", "apiKeyEnv": "OPENCODE_API_KEY",
-    "roles": ["chat"], "temperature": 0.4, "maxTokens": 900}
-   ```
-
-3. Replace the disabled `opencode-deepseek` line in `bench/models.json` with a
-   roster line carrying `adapter: "openai_http"`, `cohort: "production"`,
-   `registry_id: "opencode-deepseek"`, `model: "deepseek-v4.1-flash"` and
-   `api_key_env: "OPENCODE_API_KEY"`, then run `bench.cli providers`.
-
-The app now calls `https://opencode.ai/zen/go/v1/chat/completions`.
+`$uuid` is expanded to a fresh UUID per request by the app's client. The same
+headers work in `models.json` if you add the model to the app.
 
 ## 5. The three athlete situations
 

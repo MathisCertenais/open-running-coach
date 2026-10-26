@@ -3376,6 +3376,79 @@ function initImport() {
   });
 }
 
+/* --------------------- wger (opt-in REST pull) --------------------- */
+
+// The token lives in .env and is read by the server: the browser only ever
+// learns whether one exists (ADR-0008). One pull per button press, no polling.
+async function loadWgerStatus() {
+  const button = document.getElementById("wger-pull");
+  const status = document.getElementById("status-wger");
+  if (!button || !status) return;
+  try {
+    const res = await fetch("/api/wger/status");
+    const data = await res.json();
+    status.textContent = "";
+    if (data.configured) {
+      addDropStatus(status, "ok", `✓ API key configured for ${data.base_url}`);
+      button.disabled = false;
+    } else {
+      button.disabled = true;
+      addDropStatus(
+        status,
+        "err",
+        "✕ No API key. Put WGER_TOKEN in .env (wger → User settings → API key), then restart the app.",
+      );
+    }
+  } catch (err) {
+    console.error(err);
+    button.disabled = true;
+    status.textContent = "";
+    addDropStatus(status, "err", "✕ Could not read the wger settings.");
+  }
+}
+
+async function pullFromWger() {
+  const button = document.getElementById("wger-pull");
+  const status = document.getElementById("status-wger");
+  if (!button || !status) return;
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  status.textContent = "";
+  const pending = addDropStatus(status, "wait", "… asking wger for weight, nutrition and sessions");
+  try {
+    const res = await fetch("/api/wger/pull", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    pending.remove();
+    if (!res.ok) {
+      addDropStatus(status, "err", "✕ " + (data.detail || "Could not reach wger."));
+      return;
+    }
+    const pulled = data.pulled || {};
+    let summary =
+      `✓ ${pulled.weights || 0} weight entries, ${pulled.nutrition || 0} nutrition days, ` +
+      `${pulled.sessions || 0} sessions`;
+    if (pulled.diary_items_skipped) {
+      summary += ` (${pulled.diary_items_skipped} diary items skipped)`;
+    }
+    addDropStatus(status, "ok", summary);
+    await reloadData();
+  } catch (err) {
+    console.error(err);
+    pending.remove();
+    addDropStatus(status, "err", "✕ Network error while reaching the app server.");
+  } finally {
+    button.removeAttribute("aria-busy");
+    button.disabled = false;
+  }
+}
+
+function initWgerImport() {
+  const button = document.getElementById("wger-pull");
+  if (!button) return;
+  button.addEventListener("click", pullFromWger);
+  loadWgerStatus();
+}
+
 /* --------------------- Automatic import polling -------------------- */
 
 let dataVersion = null;
@@ -3564,6 +3637,7 @@ function initTheme() {
 
 initTheme();
 initImport();
+initWgerImport();
 initDataWatcher();
 initTabs("analysis-tabs", "analysis-tab-body");
 initTabs("coaching-tabs", "coaching-body");

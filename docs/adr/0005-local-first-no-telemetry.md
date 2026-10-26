@@ -23,4 +23,6 @@ taking on. Privacy is also the product's differentiator against Strava.
 - Map tiles are the one unavoidable external request; the tile provider receives
   the user's IP. Document it in the manual rather than pretend otherwise.
 - Any future feature that requires an account or a server needs an ADR
-  superseding this one.
+  superseding this one. ADR-0008 supersedes it once, for the opt-in wger pull:
+  a `GET`-only request made when the athlete presses a button, with the token in
+  the environment and the result written to `data/`.

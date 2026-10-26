@@ -127,6 +127,23 @@ view is only a shortcut.
   in the Import view, or put it in `data/workout/` and press **↻**.
   `exercises` are summarized into the notes.
 
+### wger over its REST API (optional)
+
+No export needed: the app can read a wger account directly. In the Import view,
+press **Connect to wger**. Weight, daily nutrition and logged strength sessions
+arrive in one go, and the status line says how many of each.
+
+Requirements, in `.env`:
+
+- `WGER_TOKEN` — **User settings → API key** on your wger instance (shown once).
+- `WGER_BASE_URL` — only for a self-hosted instance; `https://wger.de` by default.
+
+It reads only and writes the same `data/` files a manual export would, so pulling
+twice replaces the previous rows instead of duplicating them. Nothing is fetched
+until you press the button; the app is otherwise offline. wger has no GPS data,
+so running files still come from OpenTracks, Strava or Garmin. Full details:
+[`WGER.md`](WGER.md).
+
 ### Samples
 
 Two sample files are included so you can see the result immediately:

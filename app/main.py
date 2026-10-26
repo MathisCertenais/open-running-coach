@@ -48,7 +48,9 @@ from .config import (
     STATIC_DIR,
     SUPPLEMENT_FREQUENCIES,
     UPLOAD_MAX_BYTES,
+    WGER_TOKEN_ENV,
 )
+from .connectors import wger_api
 from .parsers import SUPPORTED_EXTENSIONS, Activity, parse_file
 from .store import Store
 
@@ -1446,6 +1448,46 @@ async def api_upload(category: str, filename: str, request: Request) -> dict:
         "replaced": stored["replaced"],
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# wger (opt-in REST pull)
+# ---------------------------------------------------------------------------
+@app.get("/api/wger/status")
+def api_wger_status() -> dict:
+    """Whether a wger API token is configured.
+
+    Only the presence of the token is reported: the value never leaves the
+    server, the same rule the AI model keys follow.
+    """
+    return {
+        "configured": wger_api.token_from_env() is not None,
+        "base_url": wger_api.base_url_from_env(),
+    }
+
+
+@app.post("/api/wger/pull")
+def api_wger_pull() -> dict:
+    """Pull weight, nutrition and strength sessions from wger, once.
+
+    This is the only outbound request the app makes on the athlete's behalf and
+    it happens only when they press the button (ADR-0008). It reads, writes the
+    usual export files and imports them through the file connectors, so the
+    result is identical to dropping the same JSON by hand (ADR-0004).
+    """
+    token = wger_api.token_from_env()
+    if token is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"No wger API token. Put {WGER_TOKEN_ENV} in .env "
+                "(wger -> User settings -> API key) and restart the app."
+            ),
+        )
+    try:
+        return connectors_mod.import_wger(store, token)
+    except wger_api.WgerError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------

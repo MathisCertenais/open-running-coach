@@ -297,6 +297,28 @@ A **wger-style JSON** is also accepted:
 
 `exercises` are summarized into the session notes (e.g. "Bench press 3x8 @ 60 kg").
 
+### wger over its REST API (optional)
+
+Instead of exporting wger by hand, the app can pull an account: **Import →
+wger over its REST API → Connect to wger**. It reads weight, nutrition and
+strength sessions once — `GET` only, nothing written back — and stores them as
+ordinary exports in `data/`, so a second pull replaces the first result.
+
+Mint a key under **User settings → API key** on your wger instance — either the
+permanent token or the 120-day JWT refresh token — and put it in `.env`:
+
+```ini
+WGER_TOKEN=your-personal-api-key
+# Self-hosted instance only:
+# WGER_BASE_URL=https://wger.example.org
+```
+
+The key stays on the server (never logged, never in the database, never sent to
+the browser). From a terminal the same pull is
+`.venv/bin/python -m app.connectors.wger_api`. wger has no GPS tracks, so
+running files still come from OpenTracks, Strava or Garmin. Details, skipped
+items and error messages: [`docs/WGER.md`](docs/WGER.md).
+
 Sample files are included so you can see the result immediately:
 `examples/nutrition/waistline-sample.csv` and
 `examples/workout/wger-sample.json` — copy them into the matching `data/`

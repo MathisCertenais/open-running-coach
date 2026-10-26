@@ -549,6 +549,21 @@
         <p class="drop-hint" id="drop-workout-hint">Stored in <code>data/workout/</code>.</p>
         <div class="drop-status" id="status-workout" role="status" aria-live="polite"></div>
       </div>
+
+      <div class="panel">
+        <h3>wger over its REST API</h3>
+        <p class="panel-sub">
+          Pull weight, nutrition and strength sessions from a
+          <a href="https://wger.de" target="_blank" rel="noopener noreferrer">wger</a>
+          account. Needs an API key in <code>.env</code>; nothing is fetched until
+          you press the button, and nothing is ever written back to wger.
+        </p>
+        <button class="btn" type="button" id="wger-pull" disabled>Connect to wger</button>
+        <p class="drop-hint">
+          Reads the account once and writes the same JSON you would drop here.
+        </p>
+        <div class="drop-status" id="status-wger" role="status" aria-live="polite"></div>
+      </div>
     </div>
   </section>
   </main>

@@ -452,6 +452,29 @@ INJURY_SESSION_MIN_RPE = 7
 DATA_WATCH_SECONDS = 10
 
 # ---------------------------------------------------------------------------
+# wger REST API (opt-in pull, never called by the server)
+# ---------------------------------------------------------------------------
+# wger (https://wger.de, AGPL, self-hostable) stores weight, nutrition and
+# strength training behind a documented API at /api/v2/. `python -m
+# app.connectors.wger_api` pulls it once, on demand, and writes ordinary export
+# files into data/ that the usual connectors import (ADR-0004). The running app
+# still talks to nobody but the map tiles and the configured AI coach (ADR-0005).
+WGER_BASE_URL = "https://wger.de"
+# A self-hosted instance is selected by setting this variable, not by editing
+# the code.
+WGER_BASE_URL_ENV = "WGER_BASE_URL"
+# Name of the variable holding the personal API token (wger -> User settings ->
+# API key). Read from the environment; never stored, logged or written to disk.
+WGER_TOKEN_ENV = "WGER_TOKEN"
+# wger paginates at 20 elements by default; a multi-year diary is a handful of
+# requests at this page size instead of hundreds.
+WGER_PAGE_LIMIT = 200
+# Ingredients are resolved with ?id__in=, which puts the ids in the URL. Beyond
+# this the URL gets long and the server slow, so the ids are batched.
+WGER_INGREDIENT_BATCH = 50
+WGER_TIMEOUT_S = 30.0
+
+# ---------------------------------------------------------------------------
 # Load interpretation
 # ---------------------------------------------------------------------------
 # Session-RPE load and pace-based load are different scales. A ratio outside

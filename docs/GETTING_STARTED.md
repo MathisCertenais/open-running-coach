@@ -38,7 +38,8 @@ injury risk.
 ## 6. Import nutrition and workouts (optional)
 
 - **Waistline** → *Export Diary to CSV* → `data/nutrition/`.
-- **wger** → JSON (`{"workouts": [...]}`) → `data/workout/`.
+- **wger** → JSON (`{"workouts": [...]}`) → `data/workout/`, or let the app pull
+  the account itself with **Import → Connect to wger** (see `docs/WGER.md`).
 - Press **↻**.
 
 ## 7. AI coach (optional)

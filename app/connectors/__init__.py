@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..config import DATA_NUTRITION_DIR, DATA_WORKOUT_DIR
 from . import generic, opennutritracker
 
 NUTRITION_EXTENSIONS = (".zip", ".csv", ".json")
@@ -76,9 +77,44 @@ def import_workout_dir(store, directory: Path) -> dict:
     return stats
 
 
+def import_wger(
+    store,
+    token: str,
+    base_url=None,
+    nutrition_dir: Path = DATA_NUTRITION_DIR,
+    workout_dir: Path = DATA_WORKOUT_DIR,
+    transport=None,
+    on_refresh=None,
+) -> dict:
+    """Pull wger once, write the exports and import them.
+
+    One request per athlete action, never a poll (ADR-0008). The pull is
+    read-only, and the files it writes go through the same connectors as a hand
+    dropped export, so the result is replace-or-update, not append (ADR-0004).
+    """
+    # Imported here so `python -m app.connectors.wger_api` does not load itself
+    # twice, and so the module is only touched when the pull is asked for.
+    from . import wger_api
+
+    client = wger_api.WgerClient(
+        token,
+        base_url=base_url or wger_api.base_url_from_env(),
+        transport=transport,
+        on_refresh=on_refresh or wger_api.store_token,
+    )
+    result = wger_api.pull(client)
+    wger_api.write_exports(result, nutrition_dir, workout_dir)
+    return {
+        "pulled": result.stats,
+        "nutrition": import_nutrition_dir(store, nutrition_dir),
+        "workout": import_workout_dir(store, workout_dir),
+    }
+
+
 __all__ = [
     "import_nutrition_dir",
     "import_workout_dir",
+    "import_wger",
     "generic",
     "opennutritracker",
 ]

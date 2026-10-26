@@ -44,7 +44,7 @@ python -m bench.cli providers
 python -m bench.cli capture --models all --repeats 3 --dry-run
 
 # Capture answers (writes bench/data/sweeps/<slug>/).
-python -m bench.cli capture --models gemma-4-31b,ollama-local \
+python -m bench.cli capture --models gemma-4-31b,qwen2.5-7b-instruct \
     --scenarios healthy,red_flags --repeats 3
 
 # Score every stored answer offline; rescoring after a rubric change is free.
@@ -56,12 +56,17 @@ python -m bench.cli report bench/data/sweeps/<slug>
 # Score with the blind judge. A judge not in models.json is registered from flags:
 python -m bench.cli score bench/data/sweeps/<slug> \
     --judge deepseek-v4-flash-0731 \
-    --judge-base-url https://albert.api.etalab.gouv.fr/v1 \
+    --judge-base-url "<judge-endpoint>" \
     --judge-model deepseek-v4-flash-0731 \
-    --judge-key-env ALBERT_API_KEY \
+    --judge-key-env JUDGE_API_KEY \
     --judge-repeats 0 \
     --judge-scenarios healthy,calibrating
 ```
+
+`<judge-endpoint>` is the full base URL of an OpenAI-compatible judge
+endpoint, version path included (for example, ending in `/v1`); take the
+current value from the operator. `<slug>` is the sweep directory name you
+choose, and the sweep commands below read it back.
 
 `capture` records the rubric file (`--rubric`, default
 `bench/fixtures/rubric.json`) and the judge model id (`--judge-model`) in
@@ -101,8 +106,7 @@ Keys come from the environment only. Each roster line names `api_key_env`
 key is reported as `missing_key` in `meta.json` and skipped — it is not an
 error and it does not abort the sweep. `score` also redacts the judge key
 (`--judge-key-env`) out of every judge detail before writing `scores.jsonl` or
-`meta.json`. The CLI adapter looks for `opencode` on `PATH`; set
-`BENCH_OPENCODE_BIN` to an absolute binary path when it is not.
+`meta.json`.
 
 `report` reads `meta.json`, `records.jsonl` and `scores.jsonl` and writes
 `report.md`/`report.json` in spec §8 order. It takes the verdict from
@@ -127,15 +131,9 @@ test is refused. J is provisional: if the §8.4 unstable-cell rate on the scored
 set exceeds 15%, the report withholds J and issues no verdict. No composite is
 published.
 
-The judge transport paces itself at `JUDGE_MIN_INTERVAL_S` (6.5 s, because
-Albert allows 10 requests/minute on this endpoint) and retries 429/5xx/timeouts
-with the same full-jitter/Retry-After policy as the capture adapter.
-
-Keys come from the environment only. Each roster line names `api_key_env`
-(for example `GEMMA_API_KEY`); the roster never stores a key. A model without a
-key is reported as `missing_key` in `meta.json` and skipped — it is not an
-error and it does not abort the sweep. The CLI adapter looks for `opencode` on
-`PATH`; set `BENCH_OPENCODE_BIN` to an absolute binary path when it is not.
+The judge transport paces itself at `JUDGE_MIN_INTERVAL_S` (6.5 s, because the
+endpoint allows 10 requests/minute) and retries 429/5xx/timeouts with the same
+full-jitter/Retry-After policy as the capture adapter.
 
 `bench/data/` is gitignored. Append-only `records.jsonl` is the index; a
 crashed sweep resumes from it by `record_id`, not by position. Reusing a sweep
@@ -168,45 +166,44 @@ Every roster entry carries a cohort:
 
 - `production` — `openai_http`; the same `run_chat()` the app calls, same system
   prompt, same tools, same temperature and `max_tokens`.
-- `proxy` — `opencode_cli`; the prompt goes through opencode's agent wrapper.
+- `proxy` — the vendor CLI adapter; the prompt goes through the CLI's agent
+  wrapper.
 
 Proxy and production numbers are never ranked together. Records carry both
 `model.cohort` and `model.fidelity` so the scoring phase can keep them apart.
 
-## opencode CLI adapter
+## The vendor CLI adapter
 
-**Disabled in `models.json` after the pilot.** The CLI injects opencode's own
-agent context around the request; one captured answer read *"I did not make any
-tool calls... must be some kind of injection"*, so the CLI path measures the
-model plus opencode's wrapper, not the model. The equivalent OpenAI-compatible
-endpoint is `https://opencode.ai/zen/go/v1/chat/completions` with an OpenCode
-Console key; see `_example_enabled_openai_http` in `bench/models.json`. The
-adapter remains for the `--control` idea in spec §7.5, and a failed call always
-keeps its raw event stream.
+**Disabled in `models.json` after the pilot.** The CLI injects its own agent
+context around the request; one captured answer read *"I did not make any tool
+calls... must be some kind of injection"*, so the CLI path measures the model
+plus a wrapper, not the model. An OpenAI-compatible endpoint for the same model
+family is the supported route: add it as an `openai_http` roster line (spec
+§3.1). The adapter remains for the `--control` idea in spec §7.5, and a failed
+call always keeps its raw event stream.
 
-Verified against opencode 2.1.4 with `opencode run --help` and the published
-config schema:
+Verified on the pilot's CLI build, with the CLI's own `--help` output and the
+published config schema:
 
-```
-opencode run --standalone --format json --agent coach-bench \
-  -m <provider>/<model>[#<variant>] -- "<ATHLETE_DATA + prompt>"
-```
-
+- The CLI runs non-interactively, once per record, with JSON event output, a
+  named agent that carries the coach system prompt, a
+  `provider/model[#variant]` selector, and the athlete data plus the prompt as
+  the single message argument.
 - The V2 config key is `agents`; an entry accepts `system`, `steps`, `mode` and
-  a `permissions` ruleset. The generated `opencode.jsonc` sets `steps: 1` and
+  a `permissions` ruleset. The generated config file sets `steps: 1` and
   deny-all permissions, and writes `coach_llm.SYSTEM_PROMPT` at run time so it
-  cannot drift from the product. It is passed with `OPENCODE_CONFIG` and the
-  cwd stays otherwise empty: cwd-based discovery from a system temp directory
-  did not resolve the agent reliably on macOS, even though `debug config`
-  listed the file.
+  cannot drift from the product. It is passed to the CLI as an explicit config
+  path and the cwd stays otherwise empty: cwd-based discovery from a system
+  temp directory did not resolve the agent reliably on macOS, even though the
+  CLI's own config diagnostic listed the file.
 - `--format json` emits one JSON object per line. Observed event types:
   `step_start`, `text`, `error`; the SDK also declares `step-finish` parts with
-  `reason`, `cost` and `tokens`. A local Ollama run emitted no `step-finish`, so
+  `reason`, `cost` and `tokens`. A local model run emitted no `step-finish`, so
   usage is reported as unknown rather than invented.
 - The CLI cannot set this app's temperature or `max_tokens` and cannot call its
-  Python tools. The cwd is a throwaway directory, but global
-  `~/.config/opencode/` instructions may still be prepended, and a `steps: 1`
-  run can append opencode's own turn-summary text; those are recorded as
+  Python tools. The cwd is a throwaway directory, but instructions from a
+  global CLI config directory may still be prepended, and a `steps: 1` run can
+  append the CLI's own turn-summary text; those are recorded as
   `possible_global_instructions` and `possible_wrapper_text` and are declared
   limitations.
 
@@ -221,9 +218,10 @@ the cap. The timeout budget belongs to the whole record: each attempt gets what
 is left, so a retry never restarts the clock.
 
 `PACING_INTERVALS` adds a minimum interval between request starts to the same
-origin/model. Albert publishes 128k input tokens/min and 50 req/min; a frozen
-snapshot is ~7.5k input tokens, so tokens bind first and 3.75 s (~16 calls/min)
-keeps it under the limit. Models without a configured interval are unpaced.
+origin/model. The busiest endpoint publishes 128k input tokens/min and 50
+req/min; a frozen snapshot is ~7.5k input tokens, so tokens bind first and
+3.75 s (~16 calls/min) keeps it under the limit. Models without a configured
+interval are unpaced.
 `capture --dry-run` prints the interval, the budget behind it and the pacing
 floor of the estimated wall clock.
 
@@ -251,7 +249,7 @@ python -m pytest tests/test_bench_*.py tests/test_coach_loop.py tests/test_coach
 
 The suite uses `bench.providers.fake.FakeProvider`, a stubbed subprocess runner
 and a monkeypatched `_send`; it never touches the network and never starts a
-real `opencode` process.
+real vendor CLI process.
 
 `tests/fixtures/safety_corpus.json` is the acceptance corpus for X-01, X-03 and
 R-05: one answer, one scenario, the expected outcome per rule, including the

@@ -63,12 +63,12 @@ models and which did not.
   produces a new version and a new sweep id; old sweeps stay comparable with
   each other and never with the new one.
 - The report distinguishes fidelity: OpenAI-compatible HTTP runs use the
-  production system prompt and tools; `opencode run` runs are a **proxy**,
-  because the CLI can only receive the system prompt through an agent `system`
-  field (still preceded by project instructions), cannot set temperature or
-  `maxTokens` in V2 agent config, and cannot call this app's Python tools.
-  Proxy and production numbers are reported side by side, never silently pooled
-  into one ranking.
+  production system prompt and tools; runs through the vendor CLI adapter are a
+  **proxy**, because the CLI can only receive the system prompt through an agent
+  `system` field (still preceded by project instructions), cannot set
+  temperature or `maxTokens` in V2 agent config, and cannot call this app's
+  Python tools. Proxy and production numbers are reported side by side, never
+  silently pooled into one ranking.
 - Subprocess and HTTP costs are real money. `bench capture --dry-run` prints the
   planned call count and estimated cost before anything is spent.
 - Criteria, severities, the `R / Gate / Coverage / Composite` formulas and the
@@ -96,8 +96,8 @@ models and which did not.
   works; they cannot tell you which model is the better coach. The sweep must
   run against real providers, manually, outside CI.
 - **One bespoke script per provider.** Three scripts, three record shapes, three
-  reports, and no way to add Albert the day its key arrives. The provider
-  protocol exists so a new endpoint is a roster line, not a code path.
+  reports, and no way to add a new endpoint the day its key arrives. The
+  provider protocol exists so a new endpoint is a roster line, not a code path.
 - **Storing runs in SQLite.** It would put benchmark data in `coach.db`, next to
   the athlete's health data, and make a sweep file impossible to copy, diff or
   review. JSONL is the smaller surface.

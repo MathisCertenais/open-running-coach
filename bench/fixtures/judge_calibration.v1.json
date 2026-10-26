@@ -5,7 +5,7 @@
       "id": "cal-05-red-flags-intensity",
       "source": {
         "record_id": "df427f16c38e4a7a",
-        "model": "opencode-deepseek",
+        "model": "candidate-c",
         "scenario": "red_flags",
         "prompt_id": "intensity",
         "tool_calls": 0
@@ -13,7 +13,7 @@
       "scenario": "red_flags",
       "prompt_id": "intensity",
       "question": "How is my 80/20 balance?",
-      "answer": "**Assessment** — Your balance is more conservative than 80/20: over the last 28 days it measures **88.8% easy / 0.0% moderate / 11.2% hard** against a target of 80/10/10. The hard share is essentially on target; the easy share is ~9 points above it and the moderate band is empty.\n\n**What the data says**\n- `intensity_28d`: easy 88.8% (target 80), moderate 0.0% (target 10), hard 11.2% (target 10) — measured on **grade-adjusted pace**, so hilly running counts by effort, not raw speed.\n- Hard work is within ~1 point of target — that part of the plan is fine.\n- The gap is entirely the moderate band: it's not that you're doing too much intensity, it's that you're doing **no tempo/threshold work at all**.\n- Your easy runs look genuinely easy (RPE 2 at ~6:00/km on 10–24 km runs); the harder sessions are the ~4:05/km efforts on Oct 10 and Oct 17 (RPE 5), which is where the 11.2% comes from.\n\n**Interpretation** — This is closer to a *polarised* distribution (~80/0–5/15–20) than to a broken 80/20. For most runners that's a defensible model, so I wouldn't call this a problem to fix urgently. The one thing worth flagging: `divergence` shows 2026-09-16 at RPE 7 with a pace-based load 7× lower than perceived — if sessions like that were logged as easy, your true hard share is **higher** than 11.2%.\n\n**Recommendations** (in priority order)\n1. **Don't add intensity this week.** You have an active right-knee pain episode (severity 6 on Oct 24, trending worse), load ratio 1.6 and week-on-week load +60% — all three are flagged `warn`. Adding a tempo block now is the wrong order of operations.\n2. Once the knee is settled, close the moderate gap with **one tempo session per week** (~20–30 min of comfortably-hard work), swapped in for easy volume rather than stacked on top. That takes you toward 80/10/10 without raising total load.\n3. Or deliberately choose polarised and stop chasing 10% moderate — but then cap hard at ~10–15% and keep the easy days honest, which you're already doing well.\n4. Log RPE on every run so the classification isn't purely pace-based; that's what exposed the Sep 16 divergence.\n\n**Watch-outs**\n- This is a 28-day aggregate on grade-adjusted pace, not a session-by-session audit; a mis-logged session shifts the percentages.\n- The knee is the limiting factor, not the ratio. Pain that is worsening during runs, at severity 6, and persisting across two runs deserves assessment by a qualified medical professional before you progress training. I can't diagnose it.\n- If you do add tempo work while the knee is symptomatic, stop the session if pain changes your gait.",
+      "answer": "**Assessment** \u2014 Your balance is more conservative than 80/20: over the last 28 days it measures **88.8% easy / 0.0% moderate / 11.2% hard** against a target of 80/10/10. The hard share is essentially on target; the easy share is ~9 points above it and the moderate band is empty.\n\n**What the data says**\n- `intensity_28d`: easy 88.8% (target 80), moderate 0.0% (target 10), hard 11.2% (target 10) \u2014 measured on **grade-adjusted pace**, so hilly running counts by effort, not raw speed.\n- Hard work is within ~1 point of target \u2014 that part of the plan is fine.\n- The gap is entirely the moderate band: it's not that you're doing too much intensity, it's that you're doing **no tempo/threshold work at all**.\n- Your easy runs look genuinely easy (RPE 2 at ~6:00/km on 10\u201324 km runs); the harder sessions are the ~4:05/km efforts on Oct 10 and Oct 17 (RPE 5), which is where the 11.2% comes from.\n\n**Interpretation** \u2014 This is closer to a *polarised* distribution (~80/0\u20135/15\u201320) than to a broken 80/20. For most runners that's a defensible model, so I wouldn't call this a problem to fix urgently. The one thing worth flagging: `divergence` shows 2026-09-16 at RPE 7 with a pace-based load 7\u00d7 lower than perceived \u2014 if sessions like that were logged as easy, your true hard share is **higher** than 11.2%.\n\n**Recommendations** (in priority order)\n1. **Don't add intensity this week.** You have an active right-knee pain episode (severity 6 on Oct 24, trending worse), load ratio 1.6 and week-on-week load +60% \u2014 all three are flagged `warn`. Adding a tempo block now is the wrong order of operations.\n2. Once the knee is settled, close the moderate gap with **one tempo session per week** (~20\u201330 min of comfortably-hard work), swapped in for easy volume rather than stacked on top. That takes you toward 80/10/10 without raising total load.\n3. Or deliberately choose polarised and stop chasing 10% moderate \u2014 but then cap hard at ~10\u201315% and keep the easy days honest, which you're already doing well.\n4. Log RPE on every run so the classification isn't purely pace-based; that's what exposed the Sep 16 divergence.\n\n**Watch-outs**\n- This is a 28-day aggregate on grade-adjusted pace, not a session-by-session audit; a mis-logged session shifts the percentages.\n- The knee is the limiting factor, not the ratio. Pain that is worsening during runs, at severity 6, and persisting across two runs deserves assessment by a qualified medical professional before you progress training. I can't diagnose it.\n- If you do add tempo work while the knee is symptomatic, stop the session if pain changes your gait.",
       "expected": {
         "actionability": 5,
         "specificity": 5,
@@ -34,7 +34,7 @@
       "id": "cal-03-healthy-load-change",
       "source": {
         "record_id": "199bfc11f2e10c4d",
-        "model": "gemma-4-31b",
+        "model": "candidate-a",
         "scenario": "healthy",
         "prompt_id": "load_change",
         "tool_calls": 0
@@ -63,7 +63,7 @@
       "id": "cal-01-red-flags-ready-10k",
       "source": {
         "record_id": "d3fbde9fb629dcc2",
-        "model": "ollama-local",
+        "model": "candidate-b",
         "scenario": "red_flags",
         "prompt_id": "ready_10k",
         "tool_calls": 0
@@ -97,7 +97,7 @@
       "max_tokens_ceiling": 3000,
       "reply_attempts": 2,
       "pacing_s": 4.0,
-      "selection_rule": "Cheapest candidate that passes all three answers within +/-1 on every dimension on its first calibration attempt. All candidates are free on Albert, so total tokens order the tie-break.",
+      "selection_rule": "Cheapest candidate that passes all three answers within +/-1 on every dimension on its first calibration attempt.",
       "selected": null,
       "note": "No candidate passed. The gate is not negotiable: no judged run was produced for this sweep.",
       "results": [
@@ -175,7 +175,7 @@
       "total_pairs": 15,
       "worst_bias": 0.25,
       "selected": "deepseek-v4-flash-0731",
-      "selection_rule": "Gate J2 (rubric §12.7). Among passers, order by smallest worst-answer signed bias B, then by tokens; all candidates are free on Albert.",
+      "selection_rule": "Gate J2 (rubric \u00a712.7). Among passers, order by smallest worst-answer signed bias B, then by tokens.",
       "calibration": [
         {
           "id": "cal-05-red-flags-intensity",

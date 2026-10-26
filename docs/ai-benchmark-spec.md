@@ -28,7 +28,7 @@ multi-athlete statistics, no Elo or pairwise tournament.
 | `bench/records.py` | Record schema, serialisation, hashing, key redaction |
 | `bench/providers/base.py` | `Provider` protocol, `Request`, `Completion`, `Usage`, `ToolCall` |
 | `bench/providers/openai_http.py` | Calls `coach_llm.run_chat()` — the production path |
-| `bench/providers/opencode_cli.py` | Calls `opencode run --format json` in a generated temp config |
+| `bench/providers/` (CLI adapter module) | Calls the vendor CLI's JSON event mode in a generated temp config |
 | `bench/providers/fake.py` | Test double; no network, no subprocess |
 | `bench/fixtures/scenarios.py` | Synthetic athletes and their declared expectations |
 | `bench/fixtures/build_fixtures.py` | Dev-time generator; calls the real `build_snapshot()` |
@@ -150,8 +150,8 @@ class ErrorKind(StrEnum):
 @dataclass(frozen=True)
 class ModelSpec:
     key: str                    # stable benchmark id, e.g. "gemma-4-31b"
-    adapter: str                # "openai_http" | "opencode_cli"
-    origin: str                 # ragarenn | ollama | opencode-go | albert
+    adapter: str                # "openai_http" | the CLI adapter's registry key
+    origin: str                 # endpoint family, e.g. "host-a" (see models.json)
     model: str                  # provider's model id
     variant: str | None = None
     registry_id: str | None = None      # openai_http only: id in models.json
@@ -173,7 +173,7 @@ class Completion:
     error_kind: ErrorKind | None
     error_message: str | None           # redacted before it leaves the adapter
     tool_calls: tuple[ToolCall, ...]
-    usage: Usage                        # .source ∈ provider | opencode_cli | unknown
+    usage: Usage                        # .source ∈ provider | CLI adapter | unknown
     cost_usd: float | None
     latency_ms: int
     latency_kind: Literal["http_roundtrip", "cli_process"]
@@ -193,8 +193,8 @@ or an unparseable transcript becomes a `Completion` with a status and an
 must not abort the sweep" structural rather than a `try` in the loop.
 
 `availability()` returns `ok | missing_key | unknown_id | binary_missing |
-disabled`. Albert today: `missing_key`; it becomes `ok` the day the key exists,
-with no code change.
+disabled`. An entry whose key is not exported today reports `missing_key`; it
+becomes `ok` the day the key exists, with no code change.
 
 ### 3.1 Adapter — `openai_http`
 
@@ -220,30 +220,27 @@ never touches message shaping: that stays a production concern.
   `ErrorKind`; anything else is `SERVER`. `thinking_only` is preserved because
   `_content()` (`:425`) already distinguishes it from `empty`.
 - This adapter *is* the production path. A new OpenAI-compatible provider
-  (Albert, a new gateway, a different Ollama model) needs **no code**: add the
-  entry to `models.json` and a roster line.
+  (a new endpoint, another gateway, a different local model) needs **no code**:
+  add the entry to `models.json` and a roster line.
 
-### 3.2 Adapter — `opencode_cli`
+### 3.2 Adapter — the vendor CLI
 
-`opencode run --format json` emits one JSON object per line: `text`,
+The CLI's `--format json` mode emits one JSON object per line: `text`,
 `reasoning`, `tool_use`, `step_start`, `step_finish`, `error` (verified against
-opencode 2.1.4). `step_finish.part` carries `tokens` and `cost`, so the CLI
-**does** report usage — the thing it cannot report is a comparable latency, and
-it cannot apply this app's request settings.
+the CLI build the pilot used). `step_finish.part` carries `tokens` and `cost`,
+so the CLI **does** report usage — the thing it cannot report is a comparable
+latency, and it cannot apply this app's request settings.
 
-Invocation, in a throwaway cwd so no `AGENTS.md`, `.opencode/` or project config
-is discovered:
+The adapter runs the CLI once per record, non-interactively, with four
+arguments it must pass: JSON event output, a named agent that carries the
+system prompt, a `provider/model[#variant]` selector, and the athlete data plus
+the prompt as the single message argument. It runs in a throwaway cwd so no
+`AGENTS.md`, project dot-directory or project config is discovered.
 
-```
-opencode run --standalone --format json --agent coach-bench \
-  -m <provider>/<model>[#<variant>] -- "<ATHLETE_DATA + prompt>"
-```
-
-The cwd contains a generated `opencode.jsonc`:
+The cwd contains a generated config file (JSON with comments):
 
 ```jsonc
 {
-  "$schema": "https://opencode.ai/config.json",
   "agents": {
     "coach-bench": {
       "description": "Benchmark agent: coach system prompt, no tools",
@@ -261,41 +258,42 @@ The cwd contains a generated `opencode.jsonc`:
 - The prompt is `coach_llm.snapshot_payload(snapshot)` + the user message, in
   one turn: the CLI accepts a single message, so ATHLETE_DATA cannot ride in the
   system turn. `notes` records `athlete_data_in_user_turn`.
-- `steps: 1` plus deny-all permissions means no opencode tool use and no
-  filesystem access. `fidelity="proxy"`.
+- `steps: 1` plus deny-all permissions means no CLI tool use and no filesystem
+  access. `fidelity="proxy"`.
 - V2 agent config cannot set `temperature` or `maxTokens` (the docs' agent
   `request.body` is preserved but not sent), so `params` records
   `temperature: "provider_default"`. This is a declared limitation, not a bug.
 - `latency_ms` is subprocess wall clock, `latency_kind="cli_process"`. It is
   never ranked against `http_roundtrip`.
 - Parsing: concatenate `text` parts in order → `text`; `tool_use` → tool calls
-  (normally none); sum `step_finish.part.tokens` → `usage` with
-  `source="opencode_cli"`; `step_finish.part.cost` → `cost_usd` with
-  `cost_source="opencode_cli"`; `step_finish.part.reason` → `finish_reason`
-  (`length` when the model hit its output cap); any `error` event or non-zero
-  exit → `CLI_EXIT`/`CLI_PARSE`.
+  (normally none); sum `step_finish.part.tokens` → `usage` with `source` naming
+  the adapter; `step_finish.part.cost` → `cost_usd` with `cost_source` naming
+  the adapter; `step_finish.part.reason` → `finish_reason` (`length` when the
+  model hit its output cap); any `error` event or non-zero exit →
+  `CLI_EXIT`/`CLI_PARSE`.
 - `--thinking` is not passed, so reasoning never enters the scored text.
-- **Verified on opencode 2.1.4.** `--standalone`, `--format json`, `--agent`
-  and `-m provider/model[#variant]` all exist. The config key is `agents`
-  (plural), and each entry accepts `system`, `steps`, `mode` and a
+- **Verified on the CLI build the pilot used.** `--standalone`, `--format json`,
+  `--agent` and `-m provider/model[#variant]` all exist. The config key is
+  `agents` (plural), and each entry accepts `system`, `steps`, `mode` and a
   `permissions` ruleset of `{action, resource, effect}`. An unknown `--agent`
   fails with `Agent not found`, so the flag is real. `--format json` emits
   `step_start`, `text` and `error` events; the SDK also declares `step-finish`
-  parts carrying `reason`, `cost` and `tokens`, but a local Ollama run emitted
+  parts carrying `reason`, `cost` and `tokens`, but a local model run emitted
   no `step-finish`. The adapter therefore reports usage from `step-finish` when
   present and `usage: unknown` when it is not, instead of inventing zeroes.
   In this version, config discovery from a system-temp cwd was unreliable for
-  **agent** resolution (`debug config` listed the file, `run --agent` still said
-  `Agent not found`). The adapter passes the generated file explicitly with
-  `OPENCODE_CONFIG` and keeps the cwd otherwise empty; the file is written to
-  `bench/data/tmp/` and removed after the call. A `steps: 1` run can also make
-  opencode append its own turn-summary text to the assistant `text`; that is
-  recorded as `possible_wrapper_text` and is part of why the cohort is proxy.
-- Global `~/.config/opencode/` instruction sources may still be prepended by
-  the CLI. Nothing in the config can remove them without also removing the
-  provider credentials stored under the same home. Declared as a limitation,
-  recorded in `notes: ["possible_global_instructions"]`, and never silently
-  assumed away.
+  **agent** resolution (the CLI's own config diagnostic listed the file, an
+  agent-scoped run still failed with `Agent not found`). The adapter passes the
+  generated file explicitly through the CLI's config-path environment variable
+  and keeps the cwd otherwise empty; the file is written to `bench/data/tmp/`
+  and removed after the call. A `steps: 1` run can also make the CLI append its
+  own turn-summary text to the assistant `text`; that is recorded as
+  `possible_wrapper_text` and is part of why the cohort is proxy.
+- Global instruction sources under the user's CLI config directory may still be
+  prepended by the CLI. Nothing in the config can remove them without also
+  removing the provider credentials stored under the same home. Declared as a
+  limitation, recorded in `notes: ["possible_global_instructions"]`, and never
+  silently assumed away.
 
 ### 3.3 Adding a provider
 
@@ -405,7 +403,7 @@ One record:
   "plan_hash": "5d1e...",
   "started_at": "2026-10-26T14:03:12.412Z",
   "model": {
-    "key": "gemma-4-31b", "adapter": "openai_http", "origin": "ragarenn",
+    "key": "gemma-4-31b", "adapter": "openai_http", "origin": "host-b",
     "model_id": "ilaas/gemma-4-31b", "variant": null,
     "params": {"temperature": 0.4, "max_tokens": 900, "tools": 3,
                "timeout_s": 60, "timeout_overridden": false},
@@ -508,7 +506,7 @@ def capture(plan, provider_registry, sweep_dir, *, force=False) -> CaptureSummar
 - `--dry-run`: prints calls planned, calls already paid for, estimated cost from
   the roster prices, and exits without a single network call.
 - Unknown/absent models are `availability` failures in `meta.json`, not
-  exceptions: "3 of 5 models available (albert-qwen: missing key)".
+  exceptions: "3 of 5 models available (qwen3-coder-30b: missing key)".
 
 ## 7. Scoring
 
@@ -665,11 +663,11 @@ Per-cell results with n = 3 are descriptive only and are never used to rank
 ### 7.5 Cohorts
 
 Rubric §1.1 requires every model in a comparison to get the same system prompt,
-temperature, `max_tokens` and tool access. `opencode_cli` cannot satisfy that
+temperature, `max_tokens` and tool access. The CLI adapter cannot satisfy that
 (§3.2), so every roster entry carries a cohort:
 
 - `production` — `openai_http`; full parity with the app.
-- `proxy` — `opencode_cli`; the answer is produced under a wrapper.
+- `proxy` — the CLI adapter; the answer is produced under a wrapper.
 
 Verdicts are computed **within a cohort**. Cross-cohort numbers appear in the
 same table with the fidelity column visible, and the report says which
@@ -711,7 +709,7 @@ diffed later. It is the only place a machine should read results from.
 python -m bench.cli fixtures --check
 python -m bench.cli providers [--roster bench/models.json]
 python -m bench.cli capture --models all --repeats 3 --dry-run
-python -m bench.cli capture --models gemma-4-31b,ollama-local \
+python -m bench.cli capture --models gemma-4-31b,qwen2.5-7b-instruct \
     --scenarios healthy,red_flags --repeats 3
 python -m bench.cli score bench/data/sweeps/gemma-vs-local [--judge openai/gpt-6]
 python -m bench.cli report bench/data/sweeps/gemma-vs-local

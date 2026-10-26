@@ -14,7 +14,7 @@ from app import coach_llm
 
 
 @pytest.fixture()
-def registry(monkeypatch, tmp_path):
+def registry(tmp_path):
     models = tmp_path / "models.json"
     models.write_text(
         json.dumps(
@@ -33,13 +33,17 @@ def registry(monkeypatch, tmp_path):
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(coach_llm, "MODELS_FILE", models)
-    monkeypatch.setattr(coach_llm, "LOCAL_MODELS_FILE", tmp_path / "models.local.json")
-    monkeypatch.setattr(coach_llm, "ENV_FILE", tmp_path / ".env")
-    monkeypatch.setenv("SHIPPED_KEY", "shipped-secret")
-    coach_llm.reload_models()
-    yield tmp_path
-    # Restore the real registry for any later test.
+    # ``reload_models()`` copies the two paths into MODELS, so the teardown
+    # must undo the path patches *before* reloading. Reloading while the
+    # temporary paths are still installed leaves every later test reading a
+    # deleted registry, which made the suite order-dependent.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(coach_llm, "MODELS_FILE", models)
+        patch.setattr(coach_llm, "LOCAL_MODELS_FILE", tmp_path / "models.local.json")
+        patch.setattr(coach_llm, "ENV_FILE", tmp_path / ".env")
+        patch.setenv("SHIPPED_KEY", "shipped-secret")
+        coach_llm.reload_models()
+        yield tmp_path
     coach_llm.reload_models()
 
 

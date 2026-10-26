@@ -15,6 +15,7 @@ import os
 import re
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -38,6 +39,44 @@ from .config import (
 
 class LLMError(Exception):
     """Raised when the LLM provider cannot be reached or returns an error."""
+
+
+@dataclass(frozen=True)
+class SendResult:
+    """One provider turn, plus the metadata ``chat()`` used to discard."""
+
+    message: dict
+    usage: Optional[dict]
+    finish_reason: Optional[str]
+
+
+@dataclass(frozen=True)
+class ToolCallRecord:
+    """One tool call the model made during a chat turn."""
+
+    round: int
+    name: str
+    arguments: dict
+    result: dict
+
+
+@dataclass(frozen=True)
+class ChatTrace:
+    """What a chat turn produced, including the parts production ignores.
+
+    The benchmark needs the tool transcript, the token usage and whether the
+    answer was cut off; returning a bare string made those unobservable.
+    """
+
+    text: str
+    tool_calls: tuple[ToolCallRecord, ...]
+    usage: Optional[dict]
+    rounds: int
+    tools_offered: int
+    tools_dropped: bool
+    finish_reason: Optional[str]
+    context_chars: int
+    context_truncated: bool
 
 
 SYSTEM_PROMPT = """You are "Coach", an experienced, evidence-based running coach embedded in the athlete's local training application.
@@ -316,6 +355,19 @@ def _local_ids() -> set[str]:
     }
 
 
+def find_model(model_id: str) -> Optional[dict]:
+    """Return a chat model by id whether or not its key is configured.
+
+    ``_resolve_model`` collapses "unknown id" and "known but no key" into the
+    same ``None``. The benchmark must tell those apart to report availability,
+    so the registry lookup is exposed without the configured check.
+    """
+    for model in MODELS:
+        if model["id"] == model_id and "chat" in model.get("roles", []):
+            return model
+    return None
+
+
 def default_model_id() -> Optional[str]:
     candidates = [
         m for m in MODELS if "chat" in m.get("roles", []) and _is_configured(m)
@@ -367,10 +419,20 @@ def _sanitize_history(history) -> list[dict]:
     return clean[-LLM_HISTORY_TURNS * 2 :]
 
 
-def build_messages(snapshot: dict, history, user_message: str) -> list[dict]:
+def snapshot_payload(snapshot: dict) -> tuple[str, bool]:
+    """Serialise the snapshot once, and say whether it was truncated.
+
+    ``build_messages`` and ``run_chat`` both need the same bytes and the same
+    truncation rule; keeping them in one place is what stops the chat path and
+    the benchmark path from drifting.
+    """
     data = json.dumps(snapshot, separators=(",", ":"), ensure_ascii=False)
     if len(data) > LLM_CONTEXT_MAX_CHARS:
-        data = data[:LLM_CONTEXT_MAX_CHARS] + "... (truncated)"
+        return data[:LLM_CONTEXT_MAX_CHARS] + "... (truncated)", True
+    return data, False
+
+
+def _messages_from_payload(data: str, history, user_message: str) -> list[dict]:
     messages = [
         {
             "role": "system",
@@ -382,8 +444,15 @@ def build_messages(snapshot: dict, history, user_message: str) -> list[dict]:
     return messages
 
 
-def _request(model: dict, messages: list[dict], tools: Optional[list] = None) -> dict:
-    """POST to the model and return the assistant message (content + tool calls)."""
+def build_messages(snapshot: dict, history, user_message: str) -> list[dict]:
+    data, _ = snapshot_payload(snapshot)
+    return _messages_from_payload(data, history, user_message)
+
+
+def _send(
+    model: dict, messages: list[dict], tools: Optional[list] = None
+) -> SendResult:
+    """POST to the model and return its message, usage and finish reason."""
     url = model["base_url"].rstrip("/") + model["chat_path"]
     payload = {
         "model": model["model"],
@@ -403,8 +472,9 @@ def _request(model: dict, messages: list[dict], tools: Optional[list] = None) ->
         headers=headers,
         method="POST",
     )
+    timeout = float(model.get("timeout_s") or LLM_TIMEOUT_S)
     try:
-        with urllib.request.urlopen(request, timeout=LLM_TIMEOUT_S) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             raw = response.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", "replace")[:400]
@@ -414,12 +484,19 @@ def _request(model: dict, messages: list[dict], tools: Optional[list] = None) ->
 
     try:
         data = json.loads(raw)
-        message = data["choices"][0]["message"]
+        choice = data["choices"][0]
+        message = choice["message"]
     except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise LLMError(f"Unexpected response from {model['name']}.") from exc
     if not isinstance(message, dict):
         raise LLMError(f"Unexpected response from {model['name']}.")
-    return message
+    usage = data.get("usage")
+    finish_reason = choice.get("finish_reason")
+    return SendResult(
+        message=message,
+        usage=usage if isinstance(usage, dict) else None,
+        finish_reason=finish_reason if isinstance(finish_reason, str) else None,
+    )
 
 
 def _content(message: dict, model: dict) -> str:
@@ -442,7 +519,7 @@ def _content(message: dict, model: dict) -> str:
 
 def call_llm(messages: list[dict], model: dict) -> str:
     """Single call, no tools (used by the weekly review)."""
-    return _content(_request(model, messages), model)
+    return _content(_send(model, messages).message, model)
 
 
 def _model_or_error(model_id: Optional[str]) -> dict:
@@ -453,6 +530,145 @@ def _model_or_error(model_id: Optional[str]) -> dict:
             "or configure models.json, then restart."
         )
     return model
+
+
+def _merge_usage(total: Optional[dict], usage: Optional[dict]) -> Optional[dict]:
+    """Sum token counts across the turns of one answer."""
+    if not isinstance(usage, dict):
+        return total
+    merged = dict(total or {})
+    for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        value = usage.get(key)
+        if isinstance(value, int):
+            merged[key] = merged.get(key, 0) + value
+    return merged or None
+
+
+def run_chat(
+    snapshot: dict,
+    history,
+    user_message: str,
+    model: dict,
+    tool_context: Optional[dict] = None,
+) -> ChatTrace:
+    """Answer a question and return the full trace of how it was produced.
+
+    ``chat`` is the production wrapper around this function. The trace exists
+    so the benchmark can record tool calls, usage and truncation without
+    reimplementing the loop.
+    """
+    data, truncated = snapshot_payload(snapshot)
+    messages = _messages_from_payload(data, history, user_message)
+
+    # Small models are cheaper and more reliable with fewer schemas, so a model
+    # may cap them: true = all, false = none, N = the first N in priority order.
+    setting = model.get("tools", True)
+    if setting is False or not tool_context:
+        tool_schemas = None
+    elif isinstance(setting, int) and not isinstance(setting, bool):
+        tool_schemas = coach_tools.TOOL_SCHEMAS[: max(0, setting)]
+    else:
+        tool_schemas = coach_tools.TOOL_SCHEMAS
+    use_tools = bool(tool_schemas)
+    tools_offered = len(tool_schemas) if tool_schemas else 0
+    tools_dropped = False
+
+    records: list[ToolCallRecord] = []
+    usage: Optional[dict] = None
+    finish_reason: Optional[str] = None
+    rounds = 0
+
+    for round_index in range(LLM_MAX_TOOL_ROUNDS + 1):
+        try:
+            result = _send(model, messages, tools=tool_schemas if use_tools else None)
+        except LLMError as exc:
+            # Some OpenAI-compatible servers reject the tools field outright.
+            if use_tools and ("HTTP 400" in str(exc) or "HTTP 422" in str(exc)):
+                use_tools = False
+                tools_dropped = True
+                continue
+            raise
+
+        rounds += 1
+        usage = _merge_usage(usage, result.usage)
+        finish_reason = result.finish_reason
+
+        tool_calls = result.message.get("tool_calls") or []
+        if not tool_calls:
+            return ChatTrace(
+                text=_content(result.message, model),
+                tool_calls=tuple(records),
+                usage=usage,
+                rounds=rounds,
+                tools_offered=tools_offered,
+                tools_dropped=tools_dropped,
+                finish_reason=finish_reason,
+                context_chars=len(data),
+                context_truncated=truncated,
+            )
+        if round_index >= LLM_MAX_TOOL_ROUNDS:
+            break
+
+        messages.append(
+            {
+                "role": "assistant",
+                "content": result.message.get("content") or "",
+                "tool_calls": tool_calls,
+            }
+        )
+        for call in tool_calls:
+            function = call.get("function") or {}
+            name = function.get("name") or ""
+            raw_arguments = function.get("arguments")
+            try:
+                arguments = (
+                    json.loads(raw_arguments)
+                    if isinstance(raw_arguments, str) and raw_arguments.strip()
+                    else (raw_arguments or {})
+                )
+                if not isinstance(arguments, dict):
+                    raise ValueError
+                payload = coach_tools.dispatch(name, arguments, tool_context)
+            except ValueError:
+                arguments = {}
+                payload = {"error": "Tool arguments were not valid JSON"}
+            records.append(
+                ToolCallRecord(
+                    round=round_index + 1,
+                    name=name,
+                    arguments=arguments,
+                    result=payload,
+                )
+            )
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call.get("id") or name,
+                    "content": json.dumps(payload, ensure_ascii=False),
+                }
+            )
+
+    # Out of tool budget: ask for a final answer with what it already has.
+    messages.append(
+        {
+            "role": "user",
+            "content": "Answer now with the information you already have. Do not call more tools.",
+        }
+    )
+    result = _send(model, messages, tools=None)
+    rounds += 1
+    usage = _merge_usage(usage, result.usage)
+    return ChatTrace(
+        text=_content(result.message, model),
+        tool_calls=tuple(records),
+        usage=usage,
+        rounds=rounds,
+        tools_offered=tools_offered,
+        tools_dropped=tools_dropped,
+        finish_reason=result.finish_reason,
+        context_chars=len(data),
+        context_truncated=truncated,
+    )
 
 
 def chat(
@@ -470,75 +686,7 @@ def chat(
     that does not support function calling still works.
     """
     model = _model_or_error(model_id)
-    messages = build_messages(snapshot, history, user_message)
-
-    # Small models are cheaper and more reliable with fewer schemas, so a model
-    # may cap them: true = all, false = none, N = the first N in priority order.
-    setting = model.get("tools", True)
-    if setting is False or not tool_context:
-        tool_schemas = None
-    elif isinstance(setting, int) and not isinstance(setting, bool):
-        tool_schemas = coach_tools.TOOL_SCHEMAS[: max(0, setting)]
-    else:
-        tool_schemas = coach_tools.TOOL_SCHEMAS
-    use_tools = bool(tool_schemas)
-
-    for round_index in range(LLM_MAX_TOOL_ROUNDS + 1):
-        try:
-            message = _request(
-                model, messages, tools=tool_schemas if use_tools else None
-            )
-        except LLMError as exc:
-            # Some OpenAI-compatible servers reject the tools field outright.
-            if use_tools and ("HTTP 400" in str(exc) or "HTTP 422" in str(exc)):
-                use_tools = False
-                continue
-            raise
-
-        tool_calls = message.get("tool_calls") or []
-        if not tool_calls:
-            return _content(message, model)
-        if round_index >= LLM_MAX_TOOL_ROUNDS:
-            break
-
-        messages.append(
-            {
-                "role": "assistant",
-                "content": message.get("content") or "",
-                "tool_calls": tool_calls,
-            }
-        )
-        for call in tool_calls:
-            function = call.get("function") or {}
-            name = function.get("name") or ""
-            raw_arguments = function.get("arguments")
-            try:
-                arguments = (
-                    json.loads(raw_arguments)
-                    if isinstance(raw_arguments, str) and raw_arguments.strip()
-                    else (raw_arguments or {})
-                )
-                if not isinstance(arguments, dict):
-                    raise ValueError
-                result = coach_tools.dispatch(name, arguments, tool_context)
-            except ValueError:
-                result = {"error": "Tool arguments were not valid JSON"}
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": call.get("id") or name,
-                    "content": json.dumps(result, ensure_ascii=False),
-                }
-            )
-
-    # Out of tool budget: ask for a final answer with what it already has.
-    messages.append(
-        {
-            "role": "user",
-            "content": "Answer now with the information you already have. Do not call more tools.",
-        }
-    )
-    return _content(_request(model, messages, tools=None), model)
+    return run_chat(snapshot, history, user_message, model, tool_context).text
 
 
 def review(snapshot: dict, model_id: Optional[str] = None) -> str:

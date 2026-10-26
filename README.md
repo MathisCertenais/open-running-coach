@@ -140,7 +140,9 @@ Only **derived metrics** are sent (load, CTL/ATL/TSB, ACWR, intensity split,
 VO2max, recent summaries) — never raw GPS trackpoints or coordinates. Keys are
 resolved server-side and never sent to the browser.
 
-See `docs/AI_MODELS.md` for fields, `chatPath`, roles and troubleshooting.
+See `docs/AI_MODELS.md` for fields, `chatPath`, roles and troubleshooting. Which
+model actually gives the better coaching answers is a separate question:
+`docs/AI_BENCHMARK.md` describes the local benchmark that compares them.
 
 > Thinking models (e.g. `qwen3.5`) spend tokens on hidden reasoning before
 > answering. Raise `maxTokens` for that model or use a non-thinking model.
@@ -348,6 +350,7 @@ uvicorn and probes every API endpoint.
 - `docs/GETTING_STARTED.md` — quick start for beta testers
 - `docs/USER_MANUAL.md` — how to use the app (for beta testers)
 - `docs/AI_MODELS.md` — model registry (`models.json`) and key handling
+- `docs/AI_BENCHMARK.md` — comparing models against five prompts and three athlete situations
 - `docs/DEPLOYMENT.md` — packaging as a standalone local app
 - `docs/SALES_PROPOSAL_B2C.md` / `docs/SALES_PROPOSAL_B2B.md` — product proposals
 - `docs/research/` — cited notes behind every formula (`01`–`09`) and the

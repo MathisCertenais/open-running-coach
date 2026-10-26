@@ -1199,6 +1199,7 @@ def api_coaching_chat_status() -> dict:
         "configured": coach_llm.llm_configured(),
         "models": coach_llm.list_models(),
         "default": coach_llm.default_model_id(),
+        "hidden": coach_llm.hidden_model_ids(),
     }
 
 
@@ -1208,6 +1209,8 @@ class ModelPayload(BaseModel):
     apiBase: str
     apiKey: str = ""
     chatPath: str = ""
+    # JSON object of extra headers, e.g. {"x-opencode-session": "{session}"}.
+    headers: str = ""
 
 
 @app.post("/api/coaching/models")
@@ -1223,12 +1226,29 @@ def api_add_model(payload: ModelPayload) -> dict:
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@app.put("/api/coaching/models/{model_id}")
+def api_update_model(model_id: str, payload: ModelPayload) -> dict:
+    """Edit any model. A shipped entry becomes a local override."""
+    try:
+        updated = coach_llm.update_model(model_id, payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Model not found")
+    return updated
+
+
+@app.post("/api/coaching/models/restore")
+def api_restore_models() -> dict:
+    """Bring back the shipped models that were deleted locally."""
+    return {"restored": coach_llm.restore_hidden_models()}
+
+
 @app.delete("/api/coaching/models/{model_id}")
 def api_remove_model(model_id: str) -> dict:
+    """Delete any model. Shipped entries are hidden, not removed from git."""
     if not coach_llm.remove_model(model_id):
-        raise HTTPException(
-            status_code=404, detail="Model not found, or it is a shipped model"
-        )
+        raise HTTPException(status_code=404, detail="Model not found")
     return {"removed": model_id}
 
 

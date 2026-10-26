@@ -329,6 +329,9 @@ table.data td.num, table.data th.num { text-align: right; }
 .record-dist { font-weight: 700; font-size: 14px; width: 110px; }
 .record-time { font-size: 18px; font-weight: 700; color: var(--orange); }
 .record-pace { color: var(--text-muted); font-size: 12px; margin-left: auto; }
+/* The home card is half the width of the Records view: let the pace/date wrap
+   under the time instead of overflowing. */
+#home-records .record-row { flex-wrap: wrap; }
 
 .match-group { margin-bottom: 18px; }
 .match-group-head { font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
@@ -526,7 +529,8 @@ body.onboarding-open { overflow: hidden; }
 .coach-status { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; line-height: 1.5; }
 .coach-status.warn { color: var(--warning); }
 .coach-status code { background: var(--surface-2); padding: 1px 4px; border-radius: 4px; font-size: 11px; }
-.coach-model-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.coach-model-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.coach-model-row .coach-model { flex: 0 1 auto; min-width: 0; }
 .coach-model-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
 .coach-model {
   border: 1px solid var(--border);
@@ -686,6 +690,23 @@ body.onboarding-open { overflow: hidden; }
 .home-list-date { color: var(--text-muted); white-space: nowrap; }
 .home-list-main { font-weight: 600; }
 .home-list-meta { color: var(--text-muted); text-align: right; }
+
+/* Recent runs on the home page: full rows so the half-width panel is not empty,
+   clickable to open the run. */
+.home-run-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.home-run-list li + li { border-top: 1px solid var(--border); }
+.home-run {
+  display: block; width: 100%; padding: 9px 8px; text-align: left;
+  background: none; border: 0; border-radius: 8px;
+  font: inherit; color: inherit; cursor: pointer;
+}
+.home-run:hover { background: var(--surface-3); }
+.home-run-head { display: flex; align-items: center; gap: 8px; }
+.home-run-date { font-weight: 600; font-size: 13px; }
+.home-run-head .badge { margin-left: auto; }
+.home-run-stats { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 5px; font-size: 13px; color: var(--text-muted); }
+.home-run-stats b { color: var(--text); font-weight: 600; }
+.home-run-note { display: block; margin-top: 5px; font-size: 12px; color: var(--orange); }
 .home-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 8px; }
 .home-stat { display: flex; flex-direction: column; }
 .home-stat-value { font-size: 24px; font-weight: 700; }

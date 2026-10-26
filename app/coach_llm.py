@@ -33,6 +33,7 @@ from .config import (
     LLM_MODEL,
     LLM_TEMPERATURE,
     LLM_TIMEOUT_S,
+    LLM_USER_AGENT,
     LOCAL_MODELS_FILE,
     MODELS_FILE,
 )
@@ -79,6 +80,14 @@ class ChatTrace:
     context_chars: int
     context_truncated: bool
 
+
+# Stable for the life of the process: gateways such as OpenCode Go route by
+# session and cache prompts per session. A model can reference it as {session}.
+SESSION_ID = uuid.uuid4().hex
+
+# Transport-owned headers: sending them from models.json would corrupt the
+# request, and a key smuggled here would be stored in clear text.
+RESERVED_HEADERS = {"authorization", "content-type", "content-length", "host"}
 
 SYSTEM_PROMPT = """You are "Coach", an experienced, evidence-based running coach embedded in the athlete's local training application.
 
@@ -159,12 +168,31 @@ def _normalize(item: dict) -> dict:
         "temperature": float(item.get("temperature", LLM_TEMPERATURE)),
         "max_tokens": int(item.get("maxTokens", LLM_MAX_TOKENS)),
         "chat_path": item.get("chatPath") or "/chat/completions",
-        # true = every tool, false = none, an integer = only that many schemas.
-        "tools": item.get("tools", True),
         # Extra request headers, e.g. {"x-opencode-session": "$uuid"}; the
         # key itself is never allowed here (see _request_headers).
-        "headers": item.get("headers") or {},
+        "headers": _clean_headers(item.get("headers")),
+        # true = every tool, false = none, an integer = only that many schemas.
+        "tools": item.get("tools", True),
     }
+
+
+def _clean_headers(raw) -> dict:
+    """Keep the non-transport headers of a model entry, as plain strings.
+
+    Used for gateways that need a routing hint, e.g. OpenCode Go's
+    ``x-opencode-session``. Values may contain ``{session}``.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    cleaned: dict[str, str] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            continue
+        name = key.strip()
+        if not name or name.lower() in RESERVED_HEADERS:
+            continue
+        cleaned[name] = value.strip()
+    return cleaned
 
 
 def _read_json_file(path) -> dict:
@@ -178,26 +206,64 @@ def _read_json_file(path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _load_models() -> tuple[list[dict], Optional[str]]:
-    """Merge the shipped registry with the models added from the UI.
+def _local_registry() -> dict:
+    """Read the local registry: models added or overridden, and hidden ids."""
+    local = _read_json_file(LOCAL_MODELS_FILE)
+    return {
+        "models": [
+            entry
+            for entry in local.get("models", [])
+            if isinstance(entry, dict) and entry.get("id")
+        ],
+        "hidden": [item for item in (local.get("hidden") or []) if isinstance(item, str)],
+        "default": local.get("default"),
+    }
 
-    ``models.json`` is versioned and shipped; ``models.local.json`` holds what
-    the athlete added and is gitignored. A local entry with the same id wins.
+
+def _write_local_registry(models: list[dict], hidden: list[str], default=None) -> None:
+    """Persist the local registry. Metadata only: keys stay in .env."""
+    payload: dict = {"models": models}
+    if default:
+        payload["default"] = default
+    if hidden:
+        payload["hidden"] = hidden
+    LOCAL_MODELS_FILE.write_text(
+        json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def _load_models() -> tuple[list[dict], Optional[str]]:
+    """Merge the shipped registry with the athlete's local changes.
+
+    ``models.json`` is versioned and shipped; ``models.local.json`` is gitignored
+    and holds three things: models added from the UI, overrides of shipped
+    entries (same id, local wins) and ``hidden``: the shipped ids the athlete
+    deleted. Deletion hides rather than rewrites ``models.json``, so the shipped
+    file stays clean in git and a pulled update still adds new models.
     """
     models: list[dict] = []
     default_id: Optional[str] = None
 
     shipped = _read_json_file(MODELS_FILE)
-    local = _read_json_file(LOCAL_MODELS_FILE)
+    local = _local_registry()
+    local_entries, hidden = local["models"], local["hidden"]
+    hidden_ids = set(hidden)
 
     merged: dict[str, dict] = {}
-    for item in shipped.get("models", []) + local.get("models", []):
-        if isinstance(item, dict) and item.get("model"):
+    for item in shipped.get("models", []):
+        if not isinstance(item, dict) or not item.get("model"):
+            continue
+        model_id = item.get("id") or item["model"]
+        if model_id in hidden_ids:
+            continue
+        merged[model_id] = item
+    for item in local_entries:
+        if item.get("model"):
             merged[item.get("id") or item["model"]] = item
 
     for item in merged.values():
         models.append(_normalize(item))
-    default_id = local.get("default") or shipped.get("default")
+    default_id = local["default"] or shipped.get("default")
 
     if not models and LLM_ENABLED:
         # Backward compatibility: a single model from the legacy env vars.
@@ -251,13 +317,26 @@ def _write_env_key(var_name: str, value: str) -> None:
         pass
 
 
-def add_model(payload: dict) -> dict:
-    """Register a model from the UI, storing its key in .env.
+def _delete_env_key(var_name: str) -> None:
+    """Drop one KEY=value line from .env so a removed model leaves no secret."""
+    if not var_name:
+        return
+    os.environ.pop(var_name, None)
+    if not ENV_FILE.exists():
+        return
+    try:
+        lines = ENV_FILE.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    prefix = f"{var_name}="
+    kept = [line for line in lines if not line.strip().startswith(prefix)]
+    if len(kept) == len(lines):
+        return
+    ENV_FILE.write_text("\n".join(kept) + "\n", encoding="utf-8")
 
-    The key is written server-side and never returned: the browser sends it
-    once over loopback, and ``list_models`` only ever reports whether a key is
-    configured.
-    """
+
+def _entry_fields(payload: dict) -> dict:
+    """Validate the fields shared by adding and editing a model."""
     name = (payload.get("name") or "").strip()
     model_name = (payload.get("model") or "").strip()
     api_base = (payload.get("apiBase") or "").strip().rstrip("/")
@@ -269,14 +348,59 @@ def add_model(payload: dict) -> dict:
     parsed = urlparse(api_base)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise ValueError("Base URL must start with http:// or https://")
+    return {
+        "name": name,
+        "model": model_name,
+        "apiBase": api_base,
+        "apiKey": api_key,
+        "chatPath": chat_path,
+        "headers": _payload_headers(payload.get("headers")),
+    }
 
-    local = _read_json_file(LOCAL_MODELS_FILE)
-    entries = [e for e in local.get("models", []) if isinstance(e, dict)]
+
+def _payload_headers(raw) -> dict:
+    """Parse the extra headers sent by the UI: a JSON object, or already a dict."""
+    if raw in (None, ""):
+        return {}
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError as exc:
+            raise ValueError(
+                'Extra headers must be a JSON object, e.g. {"x-opencode-session": "{session}"}'
+            ) from exc
+    if not isinstance(raw, dict):
+        raise ValueError("Extra headers must be a JSON object")
+    for key, value in raw.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ValueError("Extra headers need string names and values")
+        if key.strip().lower() in RESERVED_HEADERS:
+            raise ValueError(
+                f"The {key.strip()} header is managed by the app; "
+                "put the key in the API key field instead"
+            )
+    return _clean_headers(raw)
+
+
+def add_model(payload: dict) -> dict:
+    """Register a model from the UI, storing its key in .env.
+
+    The key is written server-side and never returned: the browser sends it
+    once over loopback, and ``list_models`` only ever reports whether a key is
+    configured.
+    """
+    fields = _entry_fields(payload)
+    name = fields["name"]
+    api_base = fields["apiBase"]
+    api_key = fields["apiKey"]
+
+    local = _local_registry()
+    entries, hidden = local["models"], local["hidden"]
 
     existing_ids = {m["id"] for m in MODELS}
     model_id = _slug(name)
     suffix = 2
-    while model_id in existing_ids or any(e.get("id") == model_id for e in entries):
+    while model_id in existing_ids or any(entry["id"] == model_id for entry in entries):
         model_id = f"{_slug(name)}-{suffix}"
         suffix += 1
 
@@ -284,14 +408,16 @@ def add_model(payload: dict) -> dict:
         "id": model_id,
         "name": name,
         "provider": "openai",
-        "model": model_name,
+        "model": fields["model"],
         "apiBase": api_base,
         "roles": ["chat"],
         "temperature": float(payload.get("temperature") or 0.4),
         "maxTokens": int(payload.get("maxTokens") or LLM_MAX_TOKENS),
     }
-    if chat_path:
-        entry["chatPath"] = chat_path
+    if fields["chatPath"]:
+        entry["chatPath"] = fields["chatPath"]
+    if fields["headers"]:
+        entry["headers"] = fields["headers"]
 
     if api_key:
         env_name = "COACH_MODEL_" + model_id.upper().replace("-", "_") + "_KEY"
@@ -300,9 +426,7 @@ def add_model(payload: dict) -> dict:
         entry["apiKeyEnv"] = env_name
 
     entries.append(entry)
-    LOCAL_MODELS_FILE.write_text(
-        json.dumps({"models": entries}, indent=2) + "\n", encoding="utf-8"
-    )
+    _write_local_registry(entries, hidden, local["default"])
     reload_models()
 
     added = next((m for m in list_models() if m["id"] == model_id), None)
@@ -311,18 +435,136 @@ def add_model(payload: dict) -> dict:
     return added
 
 
+def _shipped_entries() -> dict[str, dict]:
+    """The raw entries of models.json, keyed by id."""
+    shipped = _read_json_file(MODELS_FILE)
+    result: dict[str, dict] = {}
+    for item in shipped.get("models", []):
+        if isinstance(item, dict) and item.get("model"):
+            result[item.get("id") or item["model"]] = item
+    return result
+
+
+def _env_key_in_use(var_name: str, entries: list[dict], hidden: list[str]) -> bool:
+    """True when another visible model still reads that environment variable."""
+    shipped = {
+        key: value
+        for key, value in _shipped_entries().items()
+        if key not in set(hidden) and key not in {e.get("id") for e in entries}
+    }
+    for entry in list(entries) + list(shipped.values()):
+        if (entry.get("apiKeyEnv") or entry.get("api_key_env")) == var_name:
+            return True
+    return False
+
+
+def update_model(model_id: str, payload: dict) -> Optional[dict]:
+    """Change any model, shipped or not.
+
+    A shipped entry is never rewritten: editing it writes a local override with
+    the same id, and ``models.local.json`` wins on load. The id never changes,
+    so renaming a model keeps the selection saved in the browser pointing at it.
+    An empty ``apiKey`` keeps the stored key: the browser never receives it
+    back, so it cannot resend it.
+    """
+    local = _local_registry()
+    entries, hidden = local["models"], local["hidden"]
+    index = next((i for i, entry in enumerate(entries) if entry["id"] == model_id), None)
+
+    fields = _entry_fields(payload)
+    if index is None:
+        shipped = _shipped_entries().get(model_id)
+        if shipped is None or model_id in hidden:
+            return None
+        entry = dict(shipped)
+        # A shipped key belongs to a shared variable (ALBERT_API_KEY and the
+        # like). A new key gets its own, so the other models keep working.
+        own_key_only = True
+    else:
+        entry = dict(entries[index])
+        own_key_only = False
+
+    entry["name"] = fields["name"]
+    entry["model"] = fields["model"]
+    entry["apiBase"] = fields["apiBase"]
+    if fields["chatPath"]:
+        entry["chatPath"] = fields["chatPath"]
+    else:
+        entry.pop("chatPath", None)
+    if fields["headers"]:
+        entry["headers"] = fields["headers"]
+    else:
+        entry.pop("headers", None)
+
+    if fields["apiKey"]:
+        env_name = None if own_key_only else entry.get("apiKeyEnv")
+        env_name = env_name or (
+            "COACH_MODEL_" + model_id.upper().replace("-", "_") + "_KEY"
+        )
+        _write_env_key(env_name, fields["apiKey"])
+        os.environ[env_name] = fields["apiKey"]
+        entry["apiKeyEnv"] = env_name
+
+    if index is None:
+        entries.append(entry)
+    else:
+        entries[index] = entry
+    _write_local_registry(entries, hidden, local["default"])
+    reload_models()
+
+    updated = next((m for m in list_models() if m["id"] == model_id), None)
+    if updated is None:  # pragma: no cover - defensive
+        raise ValueError("Model could not be updated")
+    return updated
+
+
 def remove_model(model_id: str) -> bool:
-    """Remove a model added from the UI. Shipped models cannot be removed."""
-    local = _read_json_file(LOCAL_MODELS_FILE)
-    entries = [e for e in local.get("models", []) if isinstance(e, dict)]
-    remaining = [e for e in entries if e.get("id") != model_id]
-    if len(remaining) == len(entries):
+    """Delete any model.
+
+    An entry added or overridden locally is dropped from ``models.local.json``.
+    A shipped entry is added to ``hidden`` instead, so ``models.json`` stays
+    untouched and a later update can still be pulled. A ``COACH_MODEL_*`` key
+    that no other model uses is deleted from .env too, so deleting a model does
+    not leave an orphaned secret on disk; shared variables such as
+    ``ALBERT_API_KEY`` are never touched.
+    """
+    local = _local_registry()
+    entries, hidden = local["models"], local["hidden"]
+    removed = [entry for entry in entries if entry["id"] == model_id]
+    remaining = [entry for entry in entries if entry["id"] != model_id]
+
+    found = bool(removed)
+    if model_id in _shipped_entries() and model_id not in hidden:
+        hidden.append(model_id)
+        found = True
+    if not found:
         return False
-    LOCAL_MODELS_FILE.write_text(
-        json.dumps({"models": remaining}, indent=2) + "\n", encoding="utf-8"
-    )
+
+    _write_local_registry(remaining, hidden, local["default"])
+    for entry in removed:
+        var_name = entry.get("apiKeyEnv") or ""
+        if var_name.startswith("COACH_MODEL_") and not _env_key_in_use(
+            var_name, remaining, hidden
+        ):
+            _delete_env_key(var_name)
     reload_models()
     return True
+
+
+def hidden_model_ids() -> list[str]:
+    """Shipped models the athlete deleted, so the UI can offer a restore."""
+    return [model_id for model_id in _local_registry()["hidden"]]
+
+
+def restore_hidden_models() -> int:
+    """Un-hide every deleted shipped model. Returns how many came back."""
+    local = _local_registry()
+    count = len(local["hidden"])
+    if not count:
+        return 0
+    _write_local_registry(local["models"], [], local["default"])
+    reload_models()
+    return count
 
 
 def _is_configured(model: dict) -> bool:
@@ -335,28 +577,36 @@ def _is_configured(model: dict) -> bool:
 
 
 def list_models() -> list[dict]:
-    """Public model list (never includes keys)."""
+    """Public model list (never includes keys).
+
+    ``apiBase``, ``chatPath`` and ``headers`` are metadata, not secrets, and
+    the edit form needs them to pre-fill an existing entry. ``source`` tells the
+    UI where the entry lives: ``shipped`` (models.json), ``override`` (a shipped
+    entry changed locally) or ``local`` (added from the UI).
+    """
+    local_ids = {entry["id"] for entry in _local_registry()["models"]}
+    shipped_ids = set(_shipped_entries())
+
+    def source_of(model_id: str) -> str:
+        if model_id not in local_ids:
+            return "shipped"
+        return "override" if model_id in shipped_ids else "local"
+
     return [
         {
             "id": m["id"],
             "name": m["name"],
             "model": m["model"],
             "provider": m["provider"],
+            "apiBase": m["base_url"],
+            "chatPath": m["chat_path"],
+            "headers": m["headers"],
             "roles": m["roles"],
             "configured": _is_configured(m),
-            "editable": m["id"] in _local_ids(),
+            "source": source_of(m["id"]),
         }
         for m in MODELS
     ]
-
-
-def _local_ids() -> set[str]:
-    local = _read_json_file(LOCAL_MODELS_FILE)
-    return {
-        e.get("id")
-        for e in local.get("models", [])
-        if isinstance(e, dict) and e.get("id")
-    }
 
 
 def find_model(model_id: str) -> Optional[dict]:
@@ -454,23 +704,26 @@ def build_messages(snapshot: dict, history, user_message: str) -> list[dict]:
 
 
 def _request_headers(model: dict) -> dict:
-    """Request headers, with roster-provided extras and a fresh ``$uuid``.
+    """Request headers, with roster-provided extras.
 
     ``headers`` on the model is a general mechanism: literal values are sent
-    as-is, and ``$uuid`` is replaced by a new UUID4 per request (some
-    gateways want a per-session id). Authorization is set last and a header
-    named Authorization is ignored, so a roster line can never override the
-    key. The roster loader rejects such a name before this point.
+    as-is, ``$uuid`` becomes a new UUID4 per request and ``{session}`` a stable
+    id for the life of the process (gateways such as OpenCode Go route by
+    session and cache prompts within one). Authorization is set last and a
+    header named Authorization is ignored, so a roster line can never override
+    the key. The roster loader rejects such a name before this point.
     """
     session = str(uuid.uuid4())
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json", "User-Agent": LLM_USER_AGENT}
     extra = model.get("headers")
     if isinstance(extra, dict):
         for name, value in extra.items():
             name = str(name).strip()
-            if not name or name.lower() == "authorization":
+            if not name or name.lower() in RESERVED_HEADERS:
                 continue
-            headers[name] = str(value).replace("$uuid", session)
+            headers[name] = (
+                str(value).replace("$uuid", session).replace("{session}", SESSION_ID)
+            )
     if model.get("api_key"):
         headers["Authorization"] = f"Bearer {model['api_key']}"
     return headers

@@ -242,6 +242,10 @@ LLM_MAX_TOKENS = int(os.environ.get("COACH_LLM_MAX_TOKENS", "900"))
 LLM_TEMPERATURE = float(os.environ.get("COACH_LLM_TEMPERATURE", "0.4"))
 LLM_HISTORY_TURNS = int(os.environ.get("COACH_LLM_HISTORY_TURNS", "8"))
 LLM_CONTEXT_MAX_CHARS = int(os.environ.get("COACH_LLM_CONTEXT_MAX_CHARS", "14000"))
+# User-Agent sent with coach requests. urllib defaults to "Python-urllib/3.x",
+# which Cloudflare-fronted gateways reject with "error code: 1010" before the
+# request ever reaches the model. Any explicit value gets through.
+LLM_USER_AGENT = "coach-running/1.0"
 
 # ---------------------------------------------------------------------------
 # Post-run feedback (subjective enrichment of a run)

@@ -500,22 +500,24 @@ async function loadRecords() {
   ]);
   const be = await beRes.json();
   const mr = await mrRes.json();
-  renderBestEfforts(be.best_efforts || []);
+  renderBestEfforts($("#best-efforts"), be.best_efforts || []);
   renderMatchedRuns(mr.groups || []);
 }
 
-function renderBestEfforts(efforts) {
+// Shared by the Records view and the home card so both show the same rows
+// (medal, distance, time, pace, date) and open the run the same way.
+function renderBestEfforts(container, efforts) {
+  if (!container) return;
   const medals = ["🥇", "🥈", "🥉"];
-  const el = $("#best-efforts");
-  if (!efforts.length) { el.innerHTML = '<p class="empty-note">No record to display.</p>'; return; }
-  el.innerHTML = efforts.map((e, i) => `
+  if (!efforts.length) { container.innerHTML = '<p class="empty-note">No record to display.</p>'; return; }
+  container.innerHTML = efforts.map((e, i) => `
     <div class="record-row" data-id="${esc(e.activity_id)}">
       <span class="record-medal">${medals[i] || "🏅"}</span>
       <span class="record-dist">${esc(e.label)}</span>
       <span class="record-time">${fmtDuration(e.time_s)}</span>
       <span class="record-pace">${fmtPace(e.pace_s_per_km)} · ${fmtDate(e.date)}</span>
     </div>`).join("");
-  el.querySelectorAll(".record-row").forEach((r) => {
+  container.querySelectorAll(".record-row").forEach((r) => {
     r.tabIndex = 0;
     r.setAttribute("role", "button");
     r.addEventListener("keydown", (e) => {
@@ -1426,6 +1428,10 @@ function renderChatPanel(hostId, prefix) {
     <div class="coach-model-row">
       <label class="coach-model-label" for="${prefix}-model">Model</label>
       <select id="${prefix}-model" class="coach-model"></select>
+      <button class="btn ghost small hidden" type="button" id="${prefix}-model-edit">Edit</button>
+      <button class="btn ghost small hidden" type="button" id="${prefix}-model-delete">Delete</button>
+      <button class="btn ghost small hidden" type="button" id="${prefix}-model-restore"
+        title="Bring back the shipped models you deleted">Restore</button>
     </div>
     <div id="${prefix}-model-form" class="model-form-host hidden"></div>
     <div class="coach-messages" id="${prefix}-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
@@ -1442,6 +1448,12 @@ function renderChatPanel(hostId, prefix) {
   renderChatHistory(prefix);
   renderChatSuggestions(prefix);
   const form = document.getElementById(prefix + "-form");
+  const editBtn = document.getElementById(prefix + "-model-edit");
+  if (editBtn) editBtn.addEventListener("click", () => openModelEditor(prefix));
+  const deleteBtn = document.getElementById(prefix + "-model-delete");
+  if (deleteBtn) deleteBtn.addEventListener("click", () => deleteSelectedModel(prefix));
+  const restoreBtn = document.getElementById(prefix + "-model-restore");
+  if (restoreBtn) restoreBtn.addEventListener("click", () => restoreHiddenModels(prefix));
   if (form) form.addEventListener("submit", (e) => {
     e.preventDefault();
     const input = document.getElementById(prefix + "-input");
@@ -1518,6 +1530,8 @@ async function loadChatStatus(prefix, preferredId = null) {
   try {
     const status = await fetch("/api/coaching/chat/status").then((r) => r.json());
     state.coachConfigured = !!status.configured;
+    state.chatStatus = state.chatStatus || {};
+    state.chatStatus[prefix] = status;
     const select = document.getElementById(prefix + "-model");
     const chatModels = (status.models || []).filter((m) => (m.roles || []).includes("chat"));
     if (select) {
@@ -1536,15 +1550,17 @@ async function loadChatStatus(prefix, preferredId = null) {
       if (preferred) select.value = preferred.id;
       select.onchange = () => {
         if (select.value === NEW_MODEL_VALUE) {
-          renderNewModelForm(prefix);
+          renderModelForm(prefix);
           return;
         }
         hideNewModelForm(prefix);
         localStorage.setItem("coachModel", select.value);
         updateChatStatusLine(prefix, status);
+        updateModelButtons(prefix);
       };
     }
     updateChatStatusLine(prefix, status);
+    updateModelButtons(prefix);
     const disabled = !status.configured;
     [`#${prefix}-input`, `#${prefix}-send`, `#${prefix}-review`].forEach((sel) => {
       const node = document.querySelector(sel);
@@ -1556,6 +1572,83 @@ async function loadChatStatus(prefix, preferredId = null) {
   }
 }
 
+// Every model can be edited and deleted. A shipped one (models.json) is not
+// rewritten: editing writes a local override and deleting hides it locally, so
+// the versioned file stays clean and updates keep arriving.
+function selectedChatModel(prefix) {
+  const status = (state.chatStatus || {})[prefix];
+  const select = document.getElementById(prefix + "-model");
+  if (!status || !select || !select.value) return null;
+  return (status.models || []).find((m) => m.id === select.value) || null;
+}
+
+function updateModelButtons(prefix) {
+  const model = selectedChatModel(prefix);
+  ["edit", "delete"].forEach((kind) => {
+    const btn = document.getElementById(`${prefix}-model-${kind}`);
+    if (btn) btn.classList.toggle("hidden", !model);
+  });
+  const status = (state.chatStatus || {})[prefix];
+  const restore = document.getElementById(`${prefix}-model-restore`);
+  if (restore) restore.classList.toggle("hidden", !(status && (status.hidden || []).length));
+}
+
+function openModelEditor(prefix) {
+  const model = selectedChatModel(prefix);
+  if (!model) return;
+  renderModelForm(prefix, model);
+}
+
+async function restoreHiddenModels(prefix) {
+  try {
+    const res = await fetch("/api/coaching/models/restore", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showModelError(prefix, data.detail || "Could not restore the models.");
+      return;
+    }
+  } catch (err) {
+    console.error(err);
+    showModelError(prefix, "Network error while restoring the models.");
+    return;
+  }
+  await loadChatStatus(prefix);
+}
+
+async function deleteSelectedModel(prefix) {
+  const model = selectedChatModel(prefix);
+  if (!model) return;
+  const shipped = model.source !== "local";
+  const message = shipped
+    ? `Delete the AI model "${model.name}"? It is a shipped model: it will be ` +
+      "hidden on this machine (models.json is not modified) and its key stays in .env."
+    : `Delete the AI model "${model.name}"? Its stored key is removed from .env.`;
+  if (!confirm(message)) return;
+  try {
+    const res = await fetch(`/api/coaching/models/${encodeURIComponent(model.id)}`, {
+      method: "DELETE",
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showModelError(prefix, data.detail || "Could not delete the model.");
+      return;
+    }
+  } catch (err) {
+    console.error(err);
+    showModelError(prefix, "Network error while deleting the model.");
+    return;
+  }
+  hideNewModelForm(prefix);
+  await loadChatStatus(prefix);
+}
+
+function showModelError(prefix, message) {
+  const el = document.getElementById(prefix + "-status");
+  if (!el) return;
+  el.textContent = message;
+  el.classList.add("warn");
+}
+
 function hideNewModelForm(prefix) {
   const host = document.getElementById(prefix + "-model-form");
   if (!host) return;
@@ -1563,36 +1656,53 @@ function hideNewModelForm(prefix) {
   host.innerHTML = "";
 }
 
-function renderNewModelForm(prefix) {
+// One form for both modes: without `model` it registers a new endpoint, with one
+// it edits that entry. The id stays fixed when editing, so the browser selection
+// and the stored key keep pointing at the same model.
+function renderModelForm(prefix, model = null) {
   const host = document.getElementById(prefix + "-model-form");
   if (!host) return;
+  const isEdit = !!(model && model.editable);
+  const value = (text) => esc(text || "");
+  const headersJson = model && model.headers && Object.keys(model.headers).length
+    ? JSON.stringify(model.headers)
+    : "";
   host.classList.remove("hidden");
   host.innerHTML = `
     <form class="model-form" id="${prefix}-mf">
-      <h4>Add a model</h4>
-      <p class="panel-sub">Any OpenAI-compatible endpoint. The key is written to
-      <code>.env</code> on this machine — never to the database, never back to
-      the browser.</p>
+      <h4>${isEdit ? "Edit model" : "Add a model"}</h4>
+      <p class="panel-sub">${isEdit
+        ? "Change this endpoint. The stored key is kept unless you type a new one."
+        : `Any OpenAI-compatible endpoint. The key is written to <code>.env</code> on this
+      machine — never to the database, never back to the browser.`}</p>
       <label for="${prefix}-m-name">Display name
-        <input type="text" id="${prefix}-m-name" required placeholder="e.g. My gateway" />
+        <input type="text" id="${prefix}-m-name" required placeholder="e.g. My gateway" value="${value(model && model.name)}" />
       </label>
       <label for="${prefix}-m-model">Model id
-        <input type="text" id="${prefix}-m-model" required placeholder="e.g. gpt-4o-mini" />
+        <input type="text" id="${prefix}-m-model" required placeholder="e.g. gpt-4o-mini" value="${value(model && model.model)}" />
       </label>
       <label for="${prefix}-m-base">Base URL
-        <input type="url" id="${prefix}-m-base" required placeholder="https://api.example.com/v1" />
+        <input type="url" id="${prefix}-m-base" required placeholder="https://api.example.com/v1" value="${value(model && model.apiBase)}" />
       </label>
-      <label for="${prefix}-m-key">API key <span class="muted">(leave empty for a local server)</span>
+      <label for="${prefix}-m-key">API key <span class="muted">(${isEdit
+        ? "leave empty to keep the stored key"
+        : "leave empty for a local server"})</span>
         <input type="password" id="${prefix}-m-key" autocomplete="off" placeholder="sk-…" />
       </label>
       <details class="model-advanced">
         <summary>Advanced</summary>
         <label for="${prefix}-m-path">Chat path
-          <input type="text" id="${prefix}-m-path" placeholder="/chat/completions" />
+          <input type="text" id="${prefix}-m-path" placeholder="/chat/completions" value="${value(model && model.chatPath)}" />
         </label>
+        <label for="${prefix}-m-headers">Extra headers (JSON, non-secret)
+          <input type="text" id="${prefix}-m-headers" placeholder='{"x-opencode-session": "{session}"}'
+            value="${value(headersJson)}" />
+        </label>
+        <p class="panel-sub">For gateways that need a routing hint. <code>{session}</code> is
+        replaced by a stable id per server run. Never put a secret here — use the API key.</p>
       </details>
       <div class="model-form-actions">
-        <button class="btn" type="submit">Add model</button>
+        <button class="btn" type="submit">${isEdit ? "Save changes" : "Add model"}</button>
         <button class="btn ghost" type="button" id="${prefix}-m-cancel">Cancel</button>
         <span class="fb-status" id="${prefix}-m-status" role="status" aria-live="polite"></span>
       </div>
@@ -1603,22 +1713,26 @@ function renderNewModelForm(prefix) {
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    statusEl.textContent = "Adding…";
+    statusEl.textContent = isEdit ? "Saving…" : "Adding…";
     const payload = {
       name: document.getElementById(`${prefix}-m-name`).value.trim(),
       model: document.getElementById(`${prefix}-m-model`).value.trim(),
       apiBase: document.getElementById(`${prefix}-m-base`).value.trim(),
       apiKey: document.getElementById(`${prefix}-m-key`).value,
       chatPath: document.getElementById(`${prefix}-m-path`).value.trim(),
+      headers: document.getElementById(`${prefix}-m-headers`).value.trim(),
     };
-    const res = await fetch("/api/coaching/models", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const res = await fetch(
+      isEdit ? `/api/coaching/models/${encodeURIComponent(model.id)}` : "/api/coaching/models",
+      {
+        method: isEdit ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      statusEl.textContent = data.detail || "Could not add the model.";
+      statusEl.textContent = data.detail || `Could not ${isEdit ? "save" : "add"} the model.`;
       return;
     }
     document.getElementById(`${prefix}-m-key`).value = "";
@@ -1857,25 +1971,53 @@ async function loadHomeSchedule() {
   }
 }
 
+// One clickable row per run: date, type, distance, moving time, pace and
+// elevation, plus the note when there is one. Clicking opens the run, same as
+// the race-history sidebar and the best-efforts rows.
+function renderRecentRuns(container, activities) {
+  if (!container) return;
+  if (!activities.length) {
+    container.innerHTML = '<h3>Recent runs</h3><p class="empty-note">No run yet.</p>';
+    return;
+  }
+  container.innerHTML = `<h3>Recent runs</h3><ul class="home-run-list">${activities.map((a) => {
+    const st = a.stats;
+    const note = a.has_note && a.note
+      ? `<span class="home-run-note">📝 ${esc(a.note.length > 70 ? a.note.slice(0, 70) + "…" : a.note)}</span>`
+      : "";
+    return `<li><button type="button" class="home-run" data-id="${esc(a.id)}">
+      <span class="home-run-head">
+        <span class="home-run-date">${esc(fmtDate(a.start_time))}</span>
+        <span class="badge ${esc(a.activity_type)}">${esc(typeLabel(a.activity_type))}</span>
+      </span>
+      <span class="home-run-stats">
+        <span><b>${esc(fmtDistance(st.distance_m))}</b></span>
+        <span><b>${esc(fmtDuration(st.moving_time_s))}</b></span>
+        <span>${esc(fmtPace(st.avg_pace_s_per_km))}</span>
+        <span>⬆ ${Math.round(st.elevation_gain_m)} m</span>
+      </span>
+      ${note}
+    </button></li>`;
+  }).join("")}</ul>`;
+  container.querySelectorAll(".home-run").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      switchView("activities");
+      selectActivity(btn.dataset.id);
+    });
+  });
+}
+
 async function loadHomeRaces() {
   const racesEl = $("#home-races");
   const recordsEl = $("#home-records");
   if (!racesEl || !recordsEl) return;
-  const recent = (state.activities || []).slice(0, 5);
-  racesEl.innerHTML = `<h3>Recent runs</h3>` + (recent.length
-    ? `<ul class="home-list">${recent.map((a) => `
-      <li><span class="home-list-main">${esc(fmtDistance(a.stats.distance_m))} · ${esc(fmtPace(a.stats.avg_pace_s_per_km))}</span>
-      <span class="home-list-meta">${esc(fmtDate(a.start_time))}</span></li>`).join("")}</ul>`
-    : '<p class="empty-note">No run yet.</p>');
+  renderRecentRuns(racesEl, (state.activities || []).slice(0, 5));
   try {
     const data = await fetch("/api/best-efforts").then((r) => r.json());
-    const efforts = (data.best_efforts || [])
-      .filter((e) => ["5 km", "10 km", "Half marathon", "Marathon"].includes(e.label));
-    recordsEl.innerHTML = `<h3>Best efforts</h3>` + (efforts.length
-      ? `<ul class="home-list">${efforts.map((e) => `
-        <li><span class="home-list-main">${esc(e.label)}</span>
-        <span class="home-list-meta">${esc(fmtDuration(e.time_s))}</span></li>`).join("")}</ul>`
-      : '<p class="empty-note">No record yet.</p>');
+    recordsEl.innerHTML = "<h3>Best efforts</h3>";
+    const body = document.createElement("div");
+    recordsEl.appendChild(body);
+    renderBestEfforts(body, data.best_efforts || []);
   } catch (err) {
     console.error(err);
     recordsEl.innerHTML = '<h3>Best efforts</h3><p class="empty-note">Could not load records.</p>';

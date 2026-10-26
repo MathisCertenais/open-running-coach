@@ -15,6 +15,7 @@ import os
 import re
 import urllib.error
 import urllib.request
+import uuid
 from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urlparse
@@ -160,6 +161,9 @@ def _normalize(item: dict) -> dict:
         "chat_path": item.get("chatPath") or "/chat/completions",
         # true = every tool, false = none, an integer = only that many schemas.
         "tools": item.get("tools", True),
+        # Extra request headers, e.g. {"x-opencode-session": "$uuid"}; the
+        # key itself is never allowed here (see _request_headers).
+        "headers": item.get("headers") or {},
     }
 
 
@@ -449,6 +453,29 @@ def build_messages(snapshot: dict, history, user_message: str) -> list[dict]:
     return _messages_from_payload(data, history, user_message)
 
 
+def _request_headers(model: dict) -> dict:
+    """Request headers, with roster-provided extras and a fresh ``$uuid``.
+
+    ``headers`` on the model is a general mechanism: literal values are sent
+    as-is, and ``$uuid`` is replaced by a new UUID4 per request (some
+    gateways want a per-session id). Authorization is set last and a header
+    named Authorization is ignored, so a roster line can never override the
+    key. The roster loader rejects such a name before this point.
+    """
+    session = str(uuid.uuid4())
+    headers = {"Content-Type": "application/json"}
+    extra = model.get("headers")
+    if isinstance(extra, dict):
+        for name, value in extra.items():
+            name = str(name).strip()
+            if not name or name.lower() == "authorization":
+                continue
+            headers[name] = str(value).replace("$uuid", session)
+    if model.get("api_key"):
+        headers["Authorization"] = f"Bearer {model['api_key']}"
+    return headers
+
+
 def _send(
     model: dict, messages: list[dict], tools: Optional[list] = None
 ) -> SendResult:
@@ -463,9 +490,7 @@ def _send(
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
-    headers = {"Content-Type": "application/json"}
-    if model.get("api_key"):
-        headers["Authorization"] = f"Bearer {model['api_key']}"
+    headers = _request_headers(model)
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),

@@ -42,3 +42,6 @@ bench/data/
 
 # OS / editors
 .DS_Store
+
+# Herdr / agent sandboxes
+.worktrees/

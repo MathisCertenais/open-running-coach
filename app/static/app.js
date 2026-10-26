@@ -1662,7 +1662,9 @@ function hideNewModelForm(prefix) {
 function renderModelForm(prefix, model = null) {
   const host = document.getElementById(prefix + "-model-form");
   if (!host) return;
-  const isEdit = !!(model && model.editable);
+  // Every model is editable (shipped ones get a local override), so the
+  // presence of `model` — not a server flag — decides the mode.
+  const isEdit = !!model;
   const value = (text) => esc(text || "");
   const headersJson = model && model.headers && Object.keys(model.headers).length
     ? JSON.stringify(model.headers)

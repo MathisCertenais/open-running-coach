@@ -109,6 +109,7 @@ def _roster_flags() -> dict[str, dict]:
             "disabled_reason": spec.disabled_reason,
             "cohort": spec.cohort,
             "fidelity": spec.cohort,
+            "label": spec.label or spec.key,
         }
         for spec in roster.specs
     }
@@ -210,6 +211,7 @@ def _rule_detail(
     scores: Sequence[Mapping[str, object]],
     rubric: Rubric,
     disabled: set[str],
+    labels: Mapping[str, str],
 ) -> list[dict]:
     by_model: dict[str, list[Mapping[str, object]]] = {}
     for entry in scores:
@@ -245,7 +247,7 @@ def _rule_detail(
                 continue
             models.append(
                 {
-                    "model": key,
+                    "model": labels.get(key, key),
                     "applicable": applicable,
                     "passed": passed,
                     "failed": applicable - passed,
@@ -271,14 +273,18 @@ def _blocker_grids(
     scores: Sequence[Mapping[str, object]],
     disabled: set[str],
     repeats: int,
+    scenarios: Sequence[str],
+    prompts: Sequence[str],
 ) -> dict[str, dict]:
     """Per model, the scenario x prompt x repeat blocker grid.
 
     Repeats are the same prompt re-asked, not independent samples, so the grid
     is the honest unit: a cell blocked in every repeat is reproducible, one
-    blocked in a single repeat is flaky. Reads scores only, never records.
+    blocked in a single repeat is flaky. Every plan row gets a column, so a
+    failed capture is a column with no B and the denominator stays 45 even when
+    answers are missing. Reads scores only, never records.
     """
-    grids: dict[str, dict] = {}
+    observed: dict[str, dict[str, dict[str, list[bool]]]] = {}
     for entry in scores:
         if not entry.get("scored"):
             continue
@@ -291,35 +297,45 @@ def _blocker_grids(
         blocked = int((entry.get("counts") or {}).get("blocker") or 0) > 0
         if not scenario or not prompt or repeat < 0 or repeat >= repeats:
             continue
-        grid = grids.setdefault(
-            key, {"grid": {}, "blocked_answers": 0, "total": 0, "prompts": set()}
-        )
         row = (
-            grid["grid"].setdefault(scenario, {}).setdefault(prompt, [False] * repeats)
+            observed.setdefault(key, {})
+            .setdefault(scenario, {})
+            .setdefault(prompt, [False] * repeats)
         )
         row[repeat] = row[repeat] or blocked
-        grid["prompts"].add(prompt)
+
+    grid_scenarios = list(scenarios) or sorted(
+        {scenario for rows in observed.values() for scenario in rows}
+    )
+    grid_prompts = list(prompts) or sorted(
+        {
+            prompt
+            for rows in observed.values()
+            for by_prompt in rows.values()
+            for prompt in by_prompt
+        }
+    )
 
     result: dict[str, dict] = {}
-    for key, grid in grids.items():
-        rows = grid["grid"]
+    for key, rows in observed.items():
+        for scenario in grid_scenarios:
+            target = rows.setdefault(scenario, {})
+            for prompt in grid_prompts:
+                target.setdefault(prompt, [False] * repeats)
         blocked_answers = sum(
             1
-            for scenarios in rows.values()
-            for values in scenarios.values()
-            for v in values
-            if v
+            for by_prompt in rows.values()
+            for values in by_prompt.values()
+            for value in values
+            if value
         )
-        total = sum(
-            len(values) for scenarios in rows.values() for values in scenarios.values()
-        )
-        prompts = sorted(grid["prompts"])
+        total = len(grid_scenarios) * len(grid_prompts) * repeats
         all_repeats = 0
-        for prompt in prompts:
+        for prompt in grid_prompts:
             per_repeat = [
                 any(
-                    scenarios.get(prompt, [False] * repeats)[repeat]
-                    for scenarios in rows.values()
+                    by_prompt.get(prompt, [False] * repeats)[repeat]
+                    for by_prompt in rows.values()
                 )
                 for repeat in range(repeats)
             ]
@@ -328,19 +344,23 @@ def _blocker_grids(
         result[key] = {
             "grid": {
                 scenario: {
-                    prompt: list(values) for prompt, values in sorted(prompts.items())
+                    prompt: list(values) for prompt, values in sorted(by_prompt.items())
                 }
-                for scenario, prompts in sorted(rows.items())
+                for scenario, by_prompt in sorted(rows.items())
             },
             "blocked_answers": blocked_answers,
             "total": total,
             "blocked_prompts_all_repeats": all_repeats,
-            "prompts_total": len(prompts),
+            "prompts_total": len(grid_prompts),
         }
     return result
 
 
-def _cells(scores: Sequence[Mapping[str, object]], disabled: set[str]) -> list[dict]:
+def _cells(
+    scores: Sequence[Mapping[str, object]],
+    disabled: set[str],
+    labels: Mapping[str, str],
+) -> list[dict]:
     cells: dict[tuple[str, str, str], list[Mapping[str, object]]] = {}
     for entry in scores:
         if not entry.get("scored"):
@@ -379,7 +399,7 @@ def _cells(scores: Sequence[Mapping[str, object]], disabled: set[str]) -> list[d
         ]
         rows.append(
             {
-                "model": model,
+                "model": labels.get(model, model),
                 "scenario": scenario,
                 "prompt": prompt,
                 "repeats": len(entries),
@@ -408,7 +428,9 @@ def _cells(scores: Sequence[Mapping[str, object]], disabled: set[str]) -> list[d
     return rows
 
 
-def _failures(records: Sequence[Mapping[str, object]]) -> list[dict]:
+def _failures(
+    records: Sequence[Mapping[str, object]], labels: Mapping[str, str]
+) -> list[dict]:
     rows: list[dict] = []
     for record in sorted(records, key=lambda row: str(row.get("record_id") or "")):
         if record.get("status") == "ok":
@@ -417,7 +439,10 @@ def _failures(records: Sequence[Mapping[str, object]]) -> list[dict]:
         rows.append(
             {
                 "record_id": record.get("record_id"),
-                "model": (record.get("model") or {}).get("key"),
+                "model": labels.get(
+                    str((record.get("model") or {}).get("key") or ""),
+                    str((record.get("model") or {}).get("key") or ""),
+                ),
                 "scenario": (record.get("fixture") or {}).get("scenario"),
                 "prompt": (record.get("prompt") or {}).get("id"),
                 "repeat": record.get("repeat"),
@@ -433,6 +458,28 @@ def _failures(records: Sequence[Mapping[str, object]]) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Limitations generated from data
 # ---------------------------------------------------------------------------
+
+
+def _labels(
+    meta: Mapping[str, object],
+    records: Sequence[Mapping[str, object]],
+    flags: Mapping[str, Mapping[str, object]],
+) -> dict[str, str]:
+    """Roster key -> display label. Keys and provider fields never render."""
+    labels: dict[str, str] = {}
+    plan = meta.get("plan") if isinstance(meta.get("plan"), Mapping) else {}
+    for entry in plan.get("models") or []:
+        if isinstance(entry, Mapping) and entry.get("key"):
+            key = str(entry["key"])
+            labels[key] = str(entry.get("label") or key)
+    for record in records:
+        model = record.get("model") or {}
+        key = str(model.get("key") or "")
+        if key:
+            labels.setdefault(key, str(model.get("label") or key))
+    for key, flag in flags.items():
+        labels.setdefault(str(key), str(flag.get("label") or key))
+    return labels
 
 
 def _limitations(
@@ -478,7 +525,8 @@ def _limitations(
         if model.get("key") in disabled:
             continue
         notes.append(
-            f"{model['key']}: {model.get('answers')} scorable answers across "
+            f"{model.get('label') or model['key']}: {model.get('answers')} "
+            f"scorable answers across "
             f"{model.get('cells')} cells ({model.get('attempted')} attempted). "
             "The statistical n is the cell count, not the answer count."
         )
@@ -510,7 +558,7 @@ def _limitations(
         )
 
     silent = [
-        str(model.get("key"))
+        str(model.get("label") or model.get("key"))
         for model in models
         if model.get("key") not in disabled and not model.get("usage_reported")
     ]
@@ -600,6 +648,35 @@ def _limitations(
             f"Judge coverage: {missing_judge} scorable answer(s) have no judge "
             "score (judge_missing). They are counted and excluded, never "
             "imputed, so mean J is computed over the judged PASS answers only."
+        )
+
+    roster_only: dict[str, Mapping[str, object]] = {}
+    for record in records:
+        model = record.get("model") or {}
+        params = model.get("params") or {}
+        if params.get("roster_only") and model.get("key"):
+            roster_only.setdefault(str(model["key"]), params)
+    if roster_only:
+        names = ", ".join(
+            str(
+                next(
+                    (
+                        (record.get("model") or {}).get("label")
+                        for record in records
+                        if (record.get("model") or {}).get("key") == key
+                    ),
+                    key,
+                )
+            )
+            for key in sorted(roster_only)
+        )
+        params = next(iter(roster_only.values()))
+        notes.append(
+            f"Roster-only model(s) ({names}): not in the app registry, so the "
+            "adapter built the model from the roster and ran it through the "
+            "same production HTTP code path (run_chat) with the app's settings "
+            f"(temperature {params.get('temperature')}, max_tokens "
+            f"{params.get('max_tokens')}, tools enabled)."
         )
     return notes
 
@@ -794,13 +871,24 @@ def build_report(
         judge_prompt_sha256=str(judge_prompt_sha256) if judge_prompt_sha256 else None,
     )
 
+    labels = _labels(meta, records, flags)
     records_by_model = _model_records(records)
     planned = _planned_per_model(plan)
     models: list[dict] = []
     repeats = int(plan.get("repeats") or 0) or max(
         (int(entry.get("repeat") or 0) + 1 for entry in scores), default=1
     )
-    grids = _blocker_grids(scores, disabled, repeats)
+    scenarios = [
+        str(fixture.get("scenario") or "")
+        for fixture in plan.get("fixtures") or []
+        if isinstance(fixture, Mapping)
+    ]
+    prompt_ids = [
+        str(prompt.get("id") or "")
+        for prompt in plan.get("prompts") or []
+        if isinstance(prompt, Mapping)
+    ]
+    grids = _blocker_grids(scores, disabled, repeats, scenarios, prompt_ids)
     for model in summary["models"]:
         key = str(model["key"])
         rows = records_by_model.get(key, [])
@@ -811,6 +899,7 @@ def build_report(
         models.append(
             {
                 **model,
+                "label": labels.get(key, key),
                 "planned": planned or len(rows),
                 "ok": sum(1 for row in rows if row.get("status") == "ok"),
                 "disabled": is_disabled,
@@ -826,14 +915,23 @@ def build_report(
             }
         )
 
+    def label(key: object) -> str:
+        text = str(key or "")
+        return labels.get(text, text)
+
     verdicts = [
-        verdict
+        {
+            **verdict,
+            "left": label(verdict.get("left")),
+            "right": label(verdict.get("right")),
+            "winner": label(verdict["winner"]) if verdict.get("winner") else None,
+        }
         for verdict in summary["verdicts"]
         if verdict.get("left") not in disabled and verdict.get("right") not in disabled
     ]
     insufficient = [
         {
-            "model": model["key"],
+            "model": label(model["key"]),
             "cohort": model["cohort"],
             "reasons": list(model.get("reasons") or []),
         }
@@ -841,7 +939,7 @@ def build_report(
         if model.get("insufficient_evidence") and not model.get("disabled")
     ]
 
-    failures = _failures(records)
+    failures = _failures(records, labels)
     judge_present = bool(summary["judge"].get("present")) or bool(meta_judge)
     judge_withheld = bool(summary["judge"].get("withheld"))
     judge_unstable_rate = summary["judge"].get("unstable_rate")
@@ -864,7 +962,10 @@ def build_report(
         "judge_unstable_rate": judge_unstable_rate,
         "judge_withheld": judge_withheld,
         "prices_as_of": meta.get("prices_as_of"),
-        "cohorts": dict(summary["cohorts"]),
+        "cohorts": {
+            cohort: [label(key) for key in members]
+            for cohort, members in summary["cohorts"].items()
+        },
         "repeats": plan.get("repeats"),
     }
 
@@ -894,9 +995,9 @@ def build_report(
         }
         if vendor and vendor in origins:
             limitations.append(
-                f"Judge vendor disclosure: the judge ({judge_model}) shares a "
-                f"vendor with at least one model under test ({vendor}). Rubric "
-                "§8.1 requires the disclosure; the judge is not the same model."
+                "Judge vendor disclosure: the judge shares a hosting provider "
+                "with at least one model under test. Rubric §8.1 requires the "
+                "disclosure; the judge is not the same model."
             )
 
     return {
@@ -911,7 +1012,7 @@ def build_report(
         "header": header,
         "blockers": [
             {
-                "model": model["key"],
+                "model": model["label"],
                 "cohort": model["cohort"],
                 "fidelity": model["fidelity"],
                 "answers": model["answers"],
@@ -924,9 +1025,16 @@ def build_report(
         ],
         "verdicts": verdicts,
         "insufficient_evidence": insufficient,
-        "models": models,
-        "cells": _cells(scores, disabled),
-        "rules": _rule_detail(scores, rubric, disabled),
+        "models": [
+            {
+                key: value
+                for key, value in model.items()
+                if key not in ("key", "adapter")
+            }
+            for model in models
+        ],
+        "cells": _cells(scores, disabled, labels),
+        "rules": _rule_detail(scores, rubric, disabled, labels),
         "failures": failures,
         "limitations": limitations,
         "mandatory_paragraph": MANDATORY_PARAGRAPH,
@@ -1173,7 +1281,7 @@ def render_markdown(report: Mapping[str, object]) -> str:
     for model in grid_models:
         grid = model["blocker_grid"]
         lines.append(
-            f"**{model['key']}** — blocked answers: "
+            f"**{model['label']}** — blocked answers: "
             f"{model.get('blocked_answers')}/{model.get('blocked_answers_total')}; "
             f"blocked prompts: {model.get('blocked_prompts_all_repeats')}/"
             f"{model.get('prompts_total')} in every repeat"
@@ -1240,7 +1348,7 @@ def render_markdown(report: Mapping[str, object]) -> str:
             if not model.get("disabled"):
                 continue
             lines.append(
-                f"- **{model['key']}** ({model['cohort']}) — disabled, not "
+                f"- **{model['label']}** ({model['cohort']}) — disabled, not "
                 f"scored. {model.get('disabled_reason') or ''}".rstrip()
             )
         lines.append("")
@@ -1265,7 +1373,7 @@ def render_markdown(report: Mapping[str, object]) -> str:
     for model in report["models"]:
         if model.get("disabled"):
             lines.append(
-                f"| {model['key']} | {model['cohort']} | {model['fidelity']} | "
+                f"| {model['label']} | {model['cohort']} | {model['fidelity']} | "
                 "disabled — not scored | — | — | — | — | — | — | — | — | — | "
                 "— | — | — | — | — |"
             )
@@ -1291,7 +1399,7 @@ def render_markdown(report: Mapping[str, object]) -> str:
             else (_cell(model.get("judge_sd")) if judge_present else "—")
         )
         lines.append(
-            f"| {model['key']} | {model['cohort']} | {model['fidelity']} | "
+            f"| {model['label']} | {model['cohort']} | {model['fidelity']} | "
             f"{model.get('answers')}/{model.get('planned')} | "
             f"{_pct(model.get('gate_pass_rate'))} | {_cell(model.get('r_median'))} | "
             f"{_cell(iqr[0])}–{_cell(iqr[1])} | {_cell(model.get('coverage_mean'))} | "

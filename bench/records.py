@@ -120,6 +120,7 @@ def build_record(
         "started_at": _utc_timestamp(started_at),
         "model": {
             "key": item.model.key,
+            "label": item.model.label or item.model.key,
             "adapter": item.model.adapter,
             "origin": item.model.origin,
             "model_id": item.model.model,

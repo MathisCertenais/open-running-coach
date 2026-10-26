@@ -307,23 +307,35 @@ def test_bench_report_never_compares_cohorts(tmp_path):
     assert "model-a" in markdown and "proxy-c" in markdown
 
 
-def test_bench_report_marks_a_disabled_roster_entry(tmp_path):
-    disabled = full_cells("opencode-deepseek", cohort="proxy", judge=None)
+def test_bench_report_marks_a_disabled_roster_entry(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "bench.report._roster_flags",
+        lambda: {
+            "model-off": {
+                "enabled": False,
+                "disabled_reason": "wrapper injects its own context",
+                "cohort": "proxy",
+                "fidelity": "proxy",
+                "label": "Model Off",
+            }
+        },
+    )
+    disabled = full_cells("model-off", cohort="proxy", judge=None)
     for entry in disabled:
         entry["model"]["fidelity"] = "proxy"
+        entry["model"]["label"] = "Model Off"
     entries = full_cells("model-a") + disabled
     sweep = write_sweep(tmp_path, entries)
     report = build_report(sweep)
     markdown = render_markdown(report)
     assert any(
-        model["key"] == "opencode-deepseek" and model["disabled"]
+        model["label"] == "Model Off" and model["disabled"]
         for model in report["models"]
     )
-    assert "opencode-deepseek | proxy | proxy | disabled — not scored" in markdown
+    assert "Model Off | proxy | proxy | disabled — not scored" in markdown
     assert "Disabled roster entries" in markdown
     assert all(
-        verdict.get("left") != "opencode-deepseek"
-        and verdict.get("right") != "opencode-deepseek"
+        verdict.get("left") != "Model Off" and verdict.get("right") != "Model Off"
         for verdict in report["verdicts"]
     )
 
@@ -493,7 +505,87 @@ def test_blocker_grid_is_skipped_for_a_model_with_no_scored_records(tmp_path):
     sweep = write_sweep(tmp_path, entries + [unscored])
 
     report = build_report(sweep)
-    model_b = next(model for model in report["models"] if model["key"] == "model-b")
+    model_b = next(model for model in report["models"] if model["label"] == "model-b")
 
     assert model_b["blocker_grid"] is None
     assert "**model-b** — blocked answers" not in render_markdown(report)
+
+
+def test_bench_report_displays_labels_only(tmp_path):
+    """No provider, adapter, base URL or registry id renders; labels do."""
+    from bench.roster import load_roster
+
+    roster = load_roster()
+    entries: list[dict] = []
+    for spec in roster.specs:
+        cells = full_cells(spec.key, judge=None)
+        for entry in cells:
+            entry["model"].update(
+                {
+                    "label": spec.label,
+                    "adapter": spec.adapter,
+                    "origin": spec.origin,
+                    "model_id": spec.model,
+                    "registry_id": spec.registry_id,
+                    "base_url": spec.base_url,
+                }
+            )
+        entries.extend(cells)
+    sweep = write_sweep(tmp_path, entries)
+
+    report = build_report(sweep)
+    markdown = render_markdown(report)
+    payload = report_json(report)
+    for spec in roster.specs:
+        assert spec.label in markdown
+        assert spec.label in payload
+        for internal in (
+            spec.origin,
+            spec.adapter,
+            spec.base_url,
+            spec.registry_id,
+            spec.model,
+        ):
+            if internal:
+                assert internal not in markdown, internal
+                assert internal not in payload, internal
+        assert spec.key not in markdown
+        assert spec.key not in payload
+
+
+def test_bench_report_states_the_roster_only_production_path(tmp_path):
+    entries = full_cells("model-a")
+    for entry in entries:
+        entry["model"]["label"] = "Roster Only"
+        entry["model"]["params"] = {
+            "temperature": 0.4,
+            "max_tokens": 900,
+            "tools": 11,
+            "roster_only": True,
+        }
+    sweep = write_sweep(tmp_path, entries)
+
+    markdown = render_markdown(build_report(sweep))
+
+    assert "Roster-only model(s) (Roster Only)" in markdown
+    assert "same production HTTP code path" in markdown
+    assert "temperature 0.4, max_tokens 900, tools enabled" in markdown
+
+
+def test_blocker_grid_keeps_the_plan_denominator_for_a_failed_cell(tmp_path):
+    entries = [
+        entry
+        for entry in full_cells("model-a")
+        if not (
+            entry["fixture"]["scenario"] == "healthy"
+            and entry["prompt"]["id"] == "this_week"
+        )
+    ]
+    sweep = write_sweep(tmp_path, entries)
+
+    model = build_report(sweep)["models"][0]
+
+    # The missing capture is a column with no B, not a missing row.
+    assert model["blocker_grid"]["healthy"]["this_week"] == [False, False, False]
+    assert model["blocked_answers_total"] == 45
+    assert model["prompts_total"] == 5

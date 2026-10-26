@@ -90,7 +90,10 @@ class BenchmarkPlan:
             "plan_hash": self.plan_hash,
             "seed": self.seed,
             "repeats": self.repeats,
-            "models": [model.signature() for model in self.models],
+            "models": [
+                {**model.signature(), "label": model.label or model.key}
+                for model in self.models
+            ],
             "fixtures": [
                 {
                     "scenario": fixture.scenario,

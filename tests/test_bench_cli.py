@@ -29,7 +29,7 @@ def test_bench_cli_dry_run_does_not_call_a_provider(tmp_path, monkeypatch, capsy
         [
             "capture",
             "--models",
-            "ollama-local",
+            "qwen2.5-7b-instruct",
             "--scenarios",
             "healthy",
             "--prompts",
@@ -60,7 +60,7 @@ def test_bench_cli_refuses_a_different_plan_hash(tmp_path, capsys):
         [
             "capture",
             "--models",
-            "ollama-local",
+            "qwen2.5-7b-instruct",
             "--scenarios",
             "healthy",
             "--prompts",
@@ -148,7 +148,7 @@ def test_roster_distinguishes_missing_key_from_unknown_id(monkeypatch):
     assert albert_entry is not None
     monkeypatch.setitem(albert_entry, "api_key", "")
     roster = load_roster()
-    albert = roster.by_key()["albert-qwen"]
+    albert = roster.by_key()["qwen3-coder-30b"]
     assert availability_for(albert).status == AvailabilityStatus.MISSING_KEY
 
     unknown = make_spec(
@@ -175,8 +175,8 @@ def test_roster_selects_all_and_named_models():
 
     roster = load_roster()
     assert select_specs(roster, ["all"]) == list(roster.specs)
-    selected = select_specs(roster, ["gemma-4-31b,ollama-local"])
-    assert [spec.key for spec in selected] == ["gemma-4-31b", "ollama-local"]
+    selected = select_specs(roster, ["gemma-4-31b,qwen2.5-7b-instruct"])
+    assert [spec.key for spec in selected] == ["gemma-4-31b", "qwen2.5-7b-instruct"]
 
 
 # ---------------------------------------------------------------------------
@@ -468,7 +468,7 @@ def test_bench_dry_run_counts_pacing_in_the_wall_clock(capsys):
     from bench.providers.base import Availability
 
     spec = make_spec(
-        "albert-qwen", adapter="openai_http", origin="albert", model="provider-model"
+        "qwen3-coder-30b", adapter="openai_http", origin="host", model="provider-model"
     )
     plan = make_plan(models=[spec])
     availability = {spec.key: Availability(AvailabilityStatus.OK)}

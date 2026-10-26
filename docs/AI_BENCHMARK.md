@@ -54,24 +54,25 @@ id. A mismatch is refused later.
 ```bash
 .venv/bin/python -m bench.cli score bench/data/sweeps/full-sweep \
     --judge deepseek-v4-flash-0731 \
-    --judge-base-url https://albert.api.etalab.gouv.fr/v1 \
+    --judge-base-url <judge-endpoint> \
     --judge-model deepseek-v4-flash-0731 \
-    --judge-key-env ALBERT_API_KEY \
+    --judge-key-env JUDGE_API_KEY \
     --judge-repeats 0 \
     --judge-scenarios healthy,calibrating
 ```
 
-The judge scores usability — actionability, specificity, prioritisation, honesty
-about uncertainty, tone — and never sees the model's name, the scenario label, or
-which deterministic checks passed.
+Endpoints are deliberately not written on this page: `<judge-endpoint>` and the
+key variable are yours to supply. The judge scores usability — actionability,
+specificity, prioritisation, honesty about uncertainty, tone — and never sees the
+model's name, the scenario label, or which deterministic checks passed.
 
 - The judge must be a model that is **not under test**; the command refuses if it
-  is. `deepseek-v4-flash-0731` on Albert is the certified judge today. It is not
-  in `models.json`, so the `--judge-*` flags register it.
+  is. `deepseek-v4-flash-0731` is the certified judge today. It is not in
+  `models.json`, so the `--judge-*` flags register it.
 - `--judge-repeats 0` judges the first repeat of each cell, and `--judge-scenarios`
   skips the red-flag cells, which the deterministic half already decides. That is
-  30 judged answers × 3 calls ≈ **90 judge calls**, about 25 minutes at Albert's
-  10-request-per-minute limit.
+  30 judged answers × 3 calls ≈ **90 judge calls**, about 25 minutes at the
+  endpoint's 10-request-per-minute limit.
 - Before scoring, the judge must pass **Gate J2**: a weighted, signed error budget
   against three hand-scored calibration answers (each dimension within ±1 where
   its weight is at least 0.20, and the weighted error on any answer at most 0.25).
@@ -92,8 +93,8 @@ records and calls no model.
 .venv/bin/python -m bench.cli report bench/data/sweeps/full-sweep
 ```
 
-A full sweep costs nothing on the free providers but is not instant: budget about
-half an hour for the answers (the local Ollama model is the slow part), plus the
+A full sweep costs nothing on the configured endpoints but is not instant: budget
+about half an hour for the answers (the local model is the slow part), plus the
 judge pass. `capture --dry-run` prints the calls and estimated cost first.
 
 ## 3. How to read the report
@@ -137,9 +138,9 @@ that answer's **R** and fails its gate.
 
 **The fidelity column.** `production` means the answer came through the same code
 path the app uses — same system prompt, same tools, same temperature and token
-limit. `proxy` means it came through the opencode CLI, which wraps the request in
-its own agent context and cannot apply the app's settings, so proxy and
-production models are reported side by side but never ranked against each other.
+limit. `proxy` means it came through a vendor command-line wrapper, which injects
+its own agent context and cannot apply the app's settings, so proxy and production
+models are reported side by side but never ranked against each other.
 
 ## Current results
 
@@ -208,23 +209,25 @@ app's production settings — temperature 0.4, 900 output tokens, all tool schem
 The report marks it "roster-only" so the reader knows the app does not offer it
 yet. Adding it to the app is the same registry entry described above.
 
-Do not use the `opencode_cli` adapter: the CLI injects its own agent context
-around the request — one pilot answer complained about "some kind of injection" —
-so it measures the model plus a wrapper. That entry stays disabled as a record of
-the finding.
+Do not use a vendor's command-line wrapper adapter for this: it injects its own
+agent context around the request — one pilot answer complained about "some kind of
+injection" — so it measures the model plus a wrapper. That entry stays disabled as
+a record of the finding.
 
-### Note on the OpenCode Go endpoint
+### Models that need extra request headers
 
-Its OpenAI-compatible API needs a routing header on every call
-(`x-opencode-session`, any UUID) and rejects a request without one; it also
-rejects Python's default User-Agent. Both live in the roster entry:
+Some endpoints require a routing header on every call, typically a per-session
+identifier, and some reject Python's default User-Agent. Both are expressed in the
+roster entry's `headers` field, where `$uuid` expands to a fresh UUID for each
+request:
 
 ```json
-"headers": { "x-opencode-session": "$uuid", "User-Agent": "open-running-coach/1.0" }
+"headers": { "some-session-header": "$uuid", "User-Agent": "open-running-coach/1.0" }
 ```
 
-`$uuid` is expanded to a fresh UUID per request by the app's client. The same
-headers work in `models.json` if you add the model to the app.
+The concrete header names and the endpoint belong in `bench/models.json`, not in
+this document. The same mechanism works in `models.json` if you add the model to
+the app.
 
 ## 5. The three athlete situations
 
